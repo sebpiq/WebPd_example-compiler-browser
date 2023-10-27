@@ -1,0 +1,6 @@
+#N canvas 951 449 450 300 12;
+#X obj 69 133 dac~;
+#X obj 51 50 sample sounds/sound1.wav 2000;
+#X obj 110 80 sample sounds/sound2.wav 1500;
+#X connect 1 0 0 0;
+#X connect 2 0 0 1;

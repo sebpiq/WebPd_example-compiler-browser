@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>WebPd compiler web integration example</title>
+
+    <!-- START : Needed only if you want WebAssembly support -->
+    <script async src="./deps/es-module-shims@1.js"></script>
+    <script type="importmap">
+            {
+                "imports": {
+                    "binaryen": "./deps/binaryen@111.0.0-nightly.20230111.js",
+                    "long": "./deps/long@5.2.0.js",
+                    "assemblyscript": "./deps/assemblyscript@0.26.3.js",
+                    "assemblyscript/asc": "./deps/assemblyscript@0.26.3.asc.js"
+                }
+            }
+        </script>
+    <script type="module">
+        import asc from 'assemblyscript/asc'
+        window.asc = asc
+    </script>
+    <!-- END : Needed only if you want WebAssembly support -->
+
+    <script src="webpd-bundle.js"></script>
+    <script>
+        const outFormat = 'compiledJs'
+
+        const patchUrl = './patches/my-patch.pd'
+
+        const audioContext = new AudioContext()
+        let webpdNode = null
+
+        const init = async () => {
+            await WebPd.Browser.initialize(audioContext)
+
+            const _wait = (ms) => new Promise(
+                (resolve) => setTimeout(resolve, ms))
+            while (!window.asc) {
+                await _wait(100)
+            }
+            console.log('asc ready')
+
+            // Needed only if you want WebAssembly support
+            WebPd.Build.setAsc(asc)
+
+            const response = await fetch(patchUrl)
+            if (!response.ok) {
+                throw new Error(`Error loading patch ${patchUrl}`)
+            }
+            return await response.text()
+        }
+
+        const build = async (patchStr) =>
+            WebPd.Build.buildRunnable(
+                patchStr,
+                outFormat,
+                WebPd.Browser.createDefaultBuildSettings(patchUrl)
+            )
+
+        const run = async (compiledPatch) => {
+            webpdNode = await WebPd.Browser.run(
+                audioContext,
+                compiledPatch,
+                WebPd.Browser.createDefaultRunSettings(patchUrl)
+            )
+            webpdNode.connect(audioContext.destination)
+            await audioContext.resume()
+        }
+
+        const main = async () => {
+            init()
+                .then(build)
+                .then(run)
+                .then(() => console.log('running'))
+                .catch((err) => {
+                    console.error(err)
+                })
+        }
+
+    </script>
+</head>
+
+<body>
+    <button onclick="main()">Start</button>
+</body>
+
+</html>
