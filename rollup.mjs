@@ -6,7 +6,7 @@ export default [
     {
         input: 'main.mjs',
         output: {
-            file: './docs/webpd-bundle.js',
+            file: './public/webpd-bundle.js',
             format: 'iife',
             sourcemap: false,
             name: 'WebPd',

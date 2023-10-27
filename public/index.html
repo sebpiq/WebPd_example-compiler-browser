@@ -24,6 +24,12 @@
     <!-- END : Needed only if you want WebAssembly support -->
 
     <script src="webpd-bundle.js"></script>
+</head>
+
+<body>
+    <div id="initializing">Initalizing</div>
+    <button id="run" onclick="run()" style="display: none;">Run</button>
+
     <script>
         const outFormat = 'compiledJs'
 
@@ -31,6 +37,7 @@
 
         const audioContext = new AudioContext()
         let webpdNode = null
+        let compiledPatch = null
 
         const init = async () => {
             await WebPd.Browser.initialize(audioContext)
@@ -59,7 +66,8 @@
                 WebPd.Browser.createDefaultBuildSettings(patchUrl)
             )
 
-        const run = async (compiledPatch) => {
+        const run = async () => {
+            document.getElementById('run').style.display = 'none'
             webpdNode = await WebPd.Browser.run(
                 audioContext,
                 compiledPatch,
@@ -69,21 +77,15 @@
             await audioContext.resume()
         }
 
-        const main = async () => {
-            init()
-                .then(build)
-                .then(run)
-                .then(() => console.log('running'))
-                .catch((err) => {
-                    console.error(err)
-                })
-        }
+        init()
+            .then(build)
+            .then((result) => {
+                compiledPatch = result
+                document.getElementById('initializing').style.display = 'none'
+                document.getElementById('run').style.display = 'block'
+            })
 
     </script>
-</head>
-
-<body>
-    <button onclick="main()">Start</button>
 </body>
 
 </html>
