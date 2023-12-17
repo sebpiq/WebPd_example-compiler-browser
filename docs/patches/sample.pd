@@ -12,6 +12,7 @@
 #X obj 136 75 symbol \$1;
 #X obj 87 111 pack \$0 s;
 #X msg 87 168 read -resize \$2 \$1-CHANNEL1 \$1-CHANNEL2;
+#X obj 485 28 inlet;
 #X connect 0 0 4 0;
 #X connect 1 0 5 0;
 #X connect 1 0 10 0;
@@ -24,3 +25,4 @@
 #X connect 11 0 12 0;
 #X connect 12 0 0 0;
 #X connect 12 0 3 0;
+#X connect 13 0 5 1;

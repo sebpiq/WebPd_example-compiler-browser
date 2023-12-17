@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>WebPd introspect example</title>
+    <script src="webpd-bundle.js"></script>
+</head>
+
+<body>
+    <div id="initializing">Initalizing</div>
+    <button id="run" onclick="run()" style="display: none;">Run</button>
+
+    <div id="io"></div>
+
+    <script>
+        const compiledPatchUrl = './patches/my-patch.wasm'
+
+        const audioContext = new AudioContext()
+        let webpdNode = null
+        let compiledPatch = null
+
+        const init = async () => {
+            await WebPd.Browser.initialize(audioContext)
+            const response = await fetch(compiledPatchUrl)
+            if (!response.ok) {
+                throw new Error(`Error loading patch ${compiledPatchUrl}`)
+            }
+            return await response.arrayBuffer()
+        }
+
+        const run = async () => {
+            document.getElementById('run').style.display = 'none'
+            webpdNode = await WebPd.Browser.run(
+                audioContext,
+                compiledPatch,
+                WebPd.Browser.createDefaultRunSettings(compiledPatchUrl)
+            )
+            webpdNode.connect(audioContext.destination)
+            await audioContext.resume()
+        }
+
+        const sendMsgToWebPdFloatControl = (nodeId, value) => {
+            const parsed = Number(value)
+            if (isNaN(parsed)) {
+                throw new Error(`Invalid value ${value}`)
+            }
+            webpdNode.port.postMessage({
+                type: 'io:messageReceiver',
+                payload: {
+                    nodeId,
+                    portletId: '0',
+                    message: [parsed],
+                },
+            })
+        }
+
+        const explorePorts = async (compiledPatch) => {
+            const metadata = await WebPd.Browser.readMetadata(compiledPatch)
+            document.getElementById('io').innerHTML = `
+                <h2>messageReceivers</h2>
+                <ul>
+                    ${Object.entries(metadata.compilation.io.messageReceivers)
+                    .filter(([_, spec]) =>
+                        spec.metadata.group === 'control:float')
+                    .map(([nodeId, spec]) => `
+                        <li>
+                            <strong>${nodeId}</strong>
+                            <ul>
+                                <li>type: ${spec.metadata.type}</li>
+                                <li>label: ${spec.metadata.label}</li>
+                                <li>send value: 
+                                    <form onsubmit="sendMsgToWebPdFloatControl('${nodeId}', event.currentTarget.querySelector('input').value);return false">
+                                        <input type="number" step="0.01" value="0" />
+                                        <input type="submit" value="Send" />
+                                    </form>
+                                </li>
+                            </ul>
+                        </li>
+                    `).join('')}
+                </ul>
+            `
+        }
+
+        init()
+            .then((result) => {
+                compiledPatch = result
+                document.getElementById('initializing').style.display = 'none'
+                document.getElementById('run').style.display = 'block'
+                return explorePorts(result)
+            })
+
+    </script>
+</body>
+
+</html>

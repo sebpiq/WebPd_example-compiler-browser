@@ -8,15 +8,15 @@
     <!-- START : Needed only if you want WebAssembly support -->
     <script async src="./deps/es-module-shims@1.js"></script>
     <script type="importmap">
-            {
-                "imports": {
-                    "binaryen": "./deps/binaryen@111.0.0-nightly.20230111.js",
-                    "long": "./deps/long@5.2.0.js",
-                    "assemblyscript": "./deps/assemblyscript@0.26.3.js",
-                    "assemblyscript/asc": "./deps/assemblyscript@0.26.3.asc.js"
-                }
+        {
+            "imports": {
+                "binaryen": "./deps/binaryen@111.0.0-nightly.20230111.js",
+                "long": "./deps/long@5.2.0.js",
+                "assemblyscript": "./deps/assemblyscript@0.26.3.js",
+                "assemblyscript/asc": "./deps/assemblyscript@0.26.3.asc.js"
             }
-        </script>
+        }
+    </script>
     <script type="module">
         import asc from 'assemblyscript/asc'
         window.asc = asc
@@ -41,11 +41,8 @@
 
         const init = async () => {
             await WebPd.Browser.initialize(audioContext)
-
-            const _wait = (ms) => new Promise(
-                (resolve) => setTimeout(resolve, ms))
             while (!window.asc) {
-                await _wait(100)
+                await wait(100)
             }
             console.log('asc ready')
 
@@ -76,6 +73,9 @@
             webpdNode.connect(audioContext.destination)
             await audioContext.resume()
         }
+
+        const wait = (ms) => new Promise(
+            (resolve) => setTimeout(resolve, ms))
 
         init()
             .then(build)
