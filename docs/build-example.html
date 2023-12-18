@@ -31,7 +31,8 @@
     <button id="run" onclick="run()" style="display: none;">Run</button>
 
     <script>
-        const outFormat = 'compiledJs'
+        const outFormat = 'wasm'
+        // const outFormat = 'javascript'
 
         const patchUrl = './patches/my-patch.pd'
 
@@ -60,7 +61,7 @@
             WebPd.Build.buildRunnable(
                 patchStr,
                 outFormat,
-                WebPd.Browser.createDefaultBuildSettings(patchUrl)
+                WebPd.Browser.defaultSettingsForBuild(patchUrl)
             )
 
         const run = async () => {
@@ -68,7 +69,7 @@
             webpdNode = await WebPd.Browser.run(
                 audioContext,
                 compiledPatch,
-                WebPd.Browser.createDefaultRunSettings(patchUrl)
+                WebPd.Browser.defaultSettingsForRun(patchUrl)
             )
             webpdNode.connect(audioContext.destination)
             await audioContext.resume()

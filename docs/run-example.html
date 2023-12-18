@@ -34,7 +34,7 @@
             webpdNode = await WebPd.Browser.run(
                 audioContext,
                 compiledPatch,
-                WebPd.Browser.createDefaultRunSettings(compiledPatchUrl)
+                WebPd.Browser.defaultSettingsForRun(compiledPatchUrl)
             )
             webpdNode.connect(audioContext.destination)
             await audioContext.resume()
@@ -57,6 +57,7 @@
 
         const explorePorts = async (compiledPatch) => {
             const metadata = await WebPd.Browser.readMetadata(compiledPatch)
+            console.log(metadata)
             document.getElementById('io').innerHTML = `
                 <h2>messageReceivers</h2>
                 <ul>

@@ -11,5 +11,5 @@ That patches uses abstractions and sound files so we can test these features too
 → **Run the server locally** : `npx http-server docs/`
 
 → **Live demo** : 
-    - [https://sebpiq.github.io/WebPd_example-compiler-browser/build-example.html](https://sebpiq.github.io/WebPd_example-compiler-browser/build-example.html)
-    - [https://sebpiq.github.io/WebPd_example-compiler-browser/run-example.html](https://sebpiq.github.io/WebPd_example-compiler-browser/run-example.html)
+- [https://sebpiq.github.io/WebPd_example-compiler-browser/build-example.html](https://sebpiq.github.io/WebPd_example-compiler-browser/build-example.html)
+- [https://sebpiq.github.io/WebPd_example-compiler-browser/run-example.html](https://sebpiq.github.io/WebPd_example-compiler-browser/run-example.html)

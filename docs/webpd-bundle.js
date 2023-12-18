@@ -1236,6 +1236,62 @@ var WebPd = (function (exports) {
         return filteredSources;
     };
 
+    var name = "@webpd/compiler";
+    var version = "0.1.0";
+    var description = "WebPd compiler package";
+    var main = "./dist/index.js";
+    var types = "./dist/types/index.d.ts";
+    var type = "module";
+    var license = "LGPL-3.0";
+    var author = "Sébastien Piquemal";
+    var scripts = {
+    	test: "NODE_OPTIONS='--experimental-vm-modules --no-warnings' npx jest --runInBand --config jest.mjs --testTimeout 10000",
+    	"build:dist": "npx rollup --config rollup.mjs",
+    	"build:bindings": "npx rollup --config rollup-bindings.mjs",
+    	"build:all": "rm -rf dist; npm run build:dist; npm run build:bindings",
+    	prettier: "npm explore @webpd/dev -- npm run prettier $(pwd)/src",
+    	eslint: "npm explore @webpd/dev -- npm run eslint $(pwd)/src"
+    };
+    var repository = {
+    	type: "git",
+    	url: "git+https://github.com/sebpiq/WebPd_compiler.git"
+    };
+    var bugs = {
+    	url: "https://github.com/sebpiq/WebPd_compiler/issues"
+    };
+    var homepage = "https://github.com/sebpiq/WebPd_compiler#readme";
+    var devDependencies = {
+    	"@rollup/plugin-commonjs": "^23.0.4",
+    	"@rollup/plugin-node-resolve": "^15.0.1",
+    	"@rollup/plugin-typescript": "^10.0.1",
+    	"@types/jest": "^29.4.0",
+    	"@types/node": "^14.14.7",
+    	"@webpd/dev": "file:../WebPd_dev",
+    	assemblyscript: "^0.25.1",
+    	jest: "^29.4.3",
+    	rollup: "^3.7.0",
+    	"ts-jest": "^29.0.5",
+    	"ts-node": "^10.9.1",
+    	tslib: "^2.4.1",
+    	typedoc: "^0.22.17",
+    	typescript: "^4.7.2"
+    };
+    var packageInfo = {
+    	name: name,
+    	version: version,
+    	description: description,
+    	main: main,
+    	types: types,
+    	type: type,
+    	license: license,
+    	author: author,
+    	scripts: scripts,
+    	repository: repository,
+    	bugs: bugs,
+    	homepage: homepage,
+    	devDependencies: devDependencies
+    };
+
     /*
      * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.
      *
@@ -1334,6 +1390,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
     const buildMetadata = (compilation) => {
         const { settings: { audio: audioSettings, io, }, variableNamesIndex, } = compilation;
         return {
+            libVersion: packageInfo.version,
             audioSettings: {
                 ...audioSettings,
                 // Determined at configure
@@ -3733,7 +3790,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
     class InvalidSettingsError extends Error {
     }
 
-    var WEBPD_RUNTIME_CODE = "var WebPdRuntime = (function (exports) {\n  'use strict';\n\n  var _WebPdWorkletProcessorCode = \"/*\\n * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\\n *\\n * This file is part of WebPd\\n * (see https://github.com/sebpiq/WebPd).\\n *\\n * This program is free software: you can redistribute it and/or modify\\n * it under the terms of the GNU Lesser General Public License as published by\\n * the Free Software Foundation, either version 3 of the License, or\\n * (at your option) any later version.\\n *\\n * This program is distributed in the hope that it will be useful,\\n * but WITHOUT ANY WARRANTY; without even the implied warranty of\\n * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\\n * GNU Lesser General Public License for more details.\\n *\\n * You should have received a copy of the GNU Lesser General Public License\\n * along with this program. If not, see <http://www.gnu.org/licenses/>.\\n */\\nconst FS_CALLBACK_NAMES = [\\n    'onReadSoundFile',\\n    'onOpenSoundReadStream',\\n    'onWriteSoundFile',\\n    'onOpenSoundWriteStream',\\n    'onSoundStreamData',\\n    'onCloseSoundStream',\\n];\\nclass WasmWorkletProcessor extends AudioWorkletProcessor {\\n    constructor() {\\n        super();\\n        this.port.onmessage = this.onMessage.bind(this);\\n        this.settings = {\\n            blockSize: null,\\n            sampleRate,\\n        };\\n        this.dspConfigured = false;\\n        this.engine = null;\\n    }\\n    process(inputs, outputs) {\\n        const output = outputs[0];\\n        const input = inputs[0];\\n        if (!this.dspConfigured) {\\n            if (!this.engine) {\\n                return true;\\n            }\\n            this.settings.blockSize = output[0].length;\\n            this.engine.configure(this.settings.sampleRate, this.settings.blockSize);\\n            this.dspConfigured = true;\\n        }\\n        this.engine.loop(input, output);\\n        return true;\\n    }\\n    onMessage(messageEvent) {\\n        const message = messageEvent.data;\\n        switch (message.type) {\\n            case 'code:WASM':\\n                this.setWasm(message.payload.wasmBuffer);\\n                break;\\n            case 'code:JS':\\n                this.setJsCode(message.payload.jsCode);\\n                break;\\n            case 'io:messageReceiver':\\n                this.engine.io.messageReceivers[message.payload.nodeId][message.payload.portletId](message.payload.message);\\n                break;\\n            case 'fs':\\n                const returned = this.engine.fs[message.payload.functionName].apply(null, message.payload.arguments);\\n                this.port.postMessage({\\n                    type: 'fs',\\n                    payload: {\\n                        functionName: message.payload.functionName + '_return',\\n                        operationId: message.payload.arguments[0],\\n                        returned,\\n                    },\\n                });\\n                break;\\n            case 'destroy':\\n                this.destroy();\\n                break;\\n            default:\\n                new Error(`unknown message type ${message.type}`);\\n        }\\n    }\\n    // TODO : control for channelCount of wasmModule\\n    setWasm(wasmBuffer) {\\n        return AssemblyScriptWasmBindings.createEngine(wasmBuffer).then((engine) => this.setEngine(engine));\\n    }\\n    setJsCode(code) {\\n        const engine = JavaScriptBindings.createEngine(code);\\n        this.setEngine(engine);\\n    }\\n    setEngine(engine) {\\n        FS_CALLBACK_NAMES.forEach((functionName) => {\\n            ;\\n            engine.fs[functionName] = (...args) => {\\n                // We don't use transferables, because that would imply reallocating each time new array in the engine.\\n                this.port.postMessage({\\n                    type: 'fs',\\n                    payload: {\\n                        functionName,\\n                        arguments: args,\\n                    },\\n                });\\n            };\\n        });\\n        this.engine = engine;\\n        this.dspConfigured = false;\\n    }\\n    destroy() {\\n        this.process = () => false;\\n    }\\n}\\nregisterProcessor('webpd-node', WasmWorkletProcessor);\\n\";\n\n  var AssemblyScriptWasmBindingsCode = \"var AssemblyScriptWasmBindings = (function (exports) {\\n    'use strict';\\n\\n    const getFloatArrayType = (bitDepth) => bitDepth === 64 ? Float64Array : Float32Array;\\n    const createModule = (rawModule, bindings) => new Proxy({}, {\\n        get: (_, k) => {\\n            if (bindings.hasOwnProperty(k)) {\\n                const key = String(k);\\n                const bindingSpec = bindings[key];\\n                switch (bindingSpec.type) {\\n                    case 'raw':\\n                        if (k in rawModule) {\\n                            return rawModule[key];\\n                        }\\n                        else {\\n                            throw new Error(`Key ${String(key)} doesn't exist in raw module`);\\n                        }\\n                    case 'proxy':\\n                    case 'callback':\\n                        return bindingSpec.value;\\n                }\\n            }\\n            else {\\n                return undefined;\\n            }\\n        },\\n        set: (_, k, newValue) => {\\n            if (bindings.hasOwnProperty(String(k))) {\\n                const key = String(k);\\n                const bindingSpec = bindings[key];\\n                if (bindingSpec.type === 'callback') {\\n                    bindingSpec.value = newValue;\\n                }\\n                else {\\n                    throw new Error(`Binding key ${String(key)} is read-only`);\\n                }\\n            }\\n            else {\\n                throw new Error(`Key ${String(k)} is not defined in bindings`);\\n            }\\n            return true;\\n        },\\n    });\\n\\n    const liftString = (wasmExports, pointer) => {\\n        if (!pointer)\\n            return null;\\n        pointer = pointer >>> 0;\\n        const end = (pointer +\\n            new Uint32Array(wasmExports.memory.buffer)[(pointer - 4) >>> 2]) >>>\\n            1;\\n        const memoryU16 = new Uint16Array(wasmExports.memory.buffer);\\n        let start = pointer >>> 1;\\n        let string = '';\\n        while (end - start > 1024) {\\n            string += String.fromCharCode(...memoryU16.subarray(start, (start += 1024)));\\n        }\\n        return string + String.fromCharCode(...memoryU16.subarray(start, end));\\n    };\\n    const lowerString = (wasmExports, value) => {\\n        if (value == null)\\n            return 0;\\n        const length = value.length, pointer = wasmExports.__new(length << 1, 1) >>> 0, memoryU16 = new Uint16Array(wasmExports.memory.buffer);\\n        for (let i = 0; i < length; ++i)\\n            memoryU16[(pointer >>> 1) + i] = value.charCodeAt(i);\\n        return pointer;\\n    };\\n    const readTypedArray = (wasmExports, constructor, pointer) => {\\n        if (!pointer)\\n            return null;\\n        const memoryU32 = new Uint32Array(wasmExports.memory.buffer);\\n        return new constructor(wasmExports.memory.buffer, memoryU32[(pointer + 4) >>> 2], memoryU32[(pointer + 8) >>> 2] / constructor.BYTES_PER_ELEMENT);\\n    };\\n    const lowerFloatArray = (wasmExports, bitDepth, data) => {\\n        const arrayType = getFloatArrayType(bitDepth);\\n        const arrayPointer = wasmExports.createFloatArray(data.length);\\n        const array = readTypedArray(wasmExports, arrayType, arrayPointer);\\n        array.set(data);\\n        return { array, arrayPointer };\\n    };\\n    const lowerListOfFloatArrays = (wasmExports, bitDepth, data) => {\\n        const arraysPointer = wasmExports.x_core_createListOfArrays();\\n        data.forEach((array) => {\\n            const { arrayPointer } = lowerFloatArray(wasmExports, bitDepth, array);\\n            wasmExports.x_core_pushToListOfArrays(arraysPointer, arrayPointer);\\n        });\\n        return arraysPointer;\\n    };\\n    const readListOfFloatArrays = (wasmExports, bitDepth, listOfArraysPointer) => {\\n        const listLength = wasmExports.x_core_getListOfArraysLength(listOfArraysPointer);\\n        const arrays = [];\\n        const arrayType = getFloatArrayType(bitDepth);\\n        for (let i = 0; i < listLength; i++) {\\n            const arrayPointer = wasmExports.x_core_getListOfArraysElem(listOfArraysPointer, i);\\n            arrays.push(readTypedArray(wasmExports, arrayType, arrayPointer));\\n        }\\n        return arrays;\\n    };\\n\\n    const liftMessage = (wasmExports, messagePointer) => {\\n        const messageTokenTypesPointer = wasmExports.x_msg_getTokenTypes(messagePointer);\\n        const messageTokenTypes = readTypedArray(wasmExports, Int32Array, messageTokenTypesPointer);\\n        const message = [];\\n        messageTokenTypes.forEach((tokenType, tokenIndex) => {\\n            if (tokenType === wasmExports.MSG_FLOAT_TOKEN.valueOf()) {\\n                message.push(wasmExports.msg_readFloatToken(messagePointer, tokenIndex));\\n            }\\n            else if (tokenType === wasmExports.MSG_STRING_TOKEN.valueOf()) {\\n                const stringPointer = wasmExports.msg_readStringToken(messagePointer, tokenIndex);\\n                message.push(liftString(wasmExports, stringPointer));\\n            }\\n        });\\n        return message;\\n    };\\n    const lowerMessage = (wasmExports, message) => {\\n        const template = message.reduce((template, value) => {\\n            if (typeof value === 'number') {\\n                template.push(wasmExports.MSG_FLOAT_TOKEN.valueOf());\\n            }\\n            else if (typeof value === 'string') {\\n                template.push(wasmExports.MSG_STRING_TOKEN.valueOf());\\n                template.push(value.length);\\n            }\\n            else {\\n                throw new Error(`invalid message value ${value}`);\\n            }\\n            return template;\\n        }, []);\\n        const templateArrayPointer = wasmExports.x_msg_createTemplate(template.length);\\n        const loweredTemplateArray = readTypedArray(wasmExports, Int32Array, templateArrayPointer);\\n        loweredTemplateArray.set(template);\\n        const messagePointer = wasmExports.x_msg_create(templateArrayPointer);\\n        message.forEach((value, index) => {\\n            if (typeof value === 'number') {\\n                wasmExports.msg_writeFloatToken(messagePointer, index, value);\\n            }\\n            else if (typeof value === 'string') {\\n                const stringPointer = lowerString(wasmExports, value);\\n                wasmExports.msg_writeStringToken(messagePointer, index, stringPointer);\\n            }\\n        });\\n        return messagePointer;\\n    };\\n\\n    const mapObject = (src, func) => {\\n        const dest = {};\\n        Object.entries(src).forEach(([key, srcValue], i) => {\\n            dest[key] = func(srcValue, key, i);\\n        });\\n        return dest;\\n    };\\n    const mapArray = (src, func) => {\\n        const dest = {};\\n        src.forEach((srcValue, i) => {\\n            const [key, destValue] = func(srcValue, i);\\n            dest[key] = destValue;\\n        });\\n        return dest;\\n    };\\n\\n    const instantiateWasmModule = async (wasmBuffer, wasmImports = {}) => {\\n        const instanceAndModule = await WebAssembly.instantiate(wasmBuffer, {\\n            env: {\\n                abort: (messagePointer, _, lineNumber, columnNumber) => {\\n                    const message = liftString(wasmExports, messagePointer);\\n                    lineNumber = lineNumber;\\n                    columnNumber = columnNumber;\\n                    (() => {\\n                        throw Error(`${message} at ${lineNumber}:${columnNumber}`);\\n                    })();\\n                },\\n                seed: () => {\\n                    return (() => {\\n                        return Date.now() * Math.random();\\n                    })();\\n                },\\n                'console.log': (textPointer) => {\\n                    console.log(liftString(wasmExports, textPointer));\\n                },\\n            },\\n            ...wasmImports,\\n        });\\n        const wasmExports = instanceAndModule.instance\\n            .exports;\\n        return instanceAndModule.instance;\\n    };\\n\\n    const updateWasmInOuts = (rawModule, engineData) => {\\n        engineData.wasmOutput = readTypedArray(rawModule, engineData.arrayType, rawModule.getOutput());\\n        engineData.wasmInput = readTypedArray(rawModule, engineData.arrayType, rawModule.getInput());\\n    };\\n    const createEngineLifecycleBindings = (rawModule, engineData) => {\\n        return {\\n            configure: {\\n                type: 'proxy',\\n                value: (sampleRate, blockSize) => {\\n                    engineData.metadata.audioSettings.blockSize = blockSize;\\n                    engineData.metadata.audioSettings.sampleRate = sampleRate;\\n                    engineData.blockSize = blockSize;\\n                    rawModule.configure(sampleRate, blockSize);\\n                    updateWasmInOuts(rawModule, engineData);\\n                },\\n            },\\n            loop: {\\n                type: 'proxy',\\n                value: (input, output) => {\\n                    for (let channel = 0; channel < input.length; channel++) {\\n                        engineData.wasmInput.set(input[channel], channel * engineData.blockSize);\\n                    }\\n                    updateWasmInOuts(rawModule, engineData);\\n                    rawModule.loop();\\n                    updateWasmInOuts(rawModule, engineData);\\n                    for (let channel = 0; channel < output.length; channel++) {\\n                        output[channel].set(engineData.wasmOutput.subarray(engineData.blockSize * channel, engineData.blockSize * (channel + 1)));\\n                    }\\n                },\\n            },\\n        };\\n    };\\n    const createIoMessageReceiversBindings = (rawModule, engineData) => mapObject(engineData.metadata.compilation.io.messageReceivers, (spec, nodeId) => ({\\n        type: 'proxy',\\n        value: mapArray(spec.portletIds, (inletId) => [\\n            inletId,\\n            (message) => {\\n                const messagePointer = lowerMessage(rawModule, message);\\n                rawModule[engineData.metadata.compilation.variableNamesIndex.io\\n                    .messageReceivers[nodeId][inletId]](messagePointer);\\n            },\\n        ]),\\n    }));\\n    const createIoMessageSendersBindings = (_, engineData) => mapObject(engineData.metadata.compilation.io.messageSenders, (spec) => ({\\n        type: 'proxy',\\n        value: mapArray(spec.portletIds, (outletId) => [\\n            outletId,\\n            {\\n                onMessage: () => undefined,\\n            },\\n        ]),\\n    }));\\n    const ioMsgSendersImports = (forwardReferences, metadata) => {\\n        const wasmImports = {};\\n        const { variableNamesIndex } = metadata.compilation;\\n        Object.entries(metadata.compilation.io.messageSenders).forEach(([nodeId, spec]) => {\\n            spec.portletIds.forEach((outletId) => {\\n                const listenerName = variableNamesIndex.io.messageSenders[nodeId][outletId];\\n                wasmImports[listenerName] = (messagePointer) => {\\n                    const message = liftMessage(forwardReferences.rawModule, messagePointer);\\n                    forwardReferences.modules.io.messageSenders[nodeId][outletId].onMessage(message);\\n                };\\n            });\\n        });\\n        return wasmImports;\\n    };\\n    const readMetadata = async (wasmBuffer) => {\\n        const inputImports = {};\\n        const wasmModule = WebAssembly.Module.imports(new WebAssembly.Module(wasmBuffer));\\n        wasmModule\\n            .filter((imprt) => imprt.module === 'input' && imprt.kind === 'function')\\n            .forEach((imprt) => (inputImports[imprt.name] = () => undefined));\\n        const wasmInstance = await instantiateWasmModule(wasmBuffer, {\\n            input: inputImports,\\n        });\\n        const wasmExports = wasmInstance.exports;\\n        const stringPointer = wasmExports.metadata.valueOf();\\n        const metadataJSON = liftString(wasmExports, stringPointer);\\n        return JSON.parse(metadataJSON);\\n    };\\n\\n    const createFsBindings = (rawModule, engineData) => ({\\n        sendReadSoundFileResponse: {\\n            type: 'proxy',\\n            value: (operationId, status, sound) => {\\n                let soundPointer = 0;\\n                if (sound) {\\n                    soundPointer = lowerListOfFloatArrays(rawModule, engineData.bitDepth, sound);\\n                }\\n                rawModule.x_fs_onReadSoundFileResponse(operationId, status, soundPointer);\\n                updateWasmInOuts(rawModule, engineData);\\n            },\\n        },\\n        sendWriteSoundFileResponse: {\\n            type: 'proxy',\\n            value: rawModule.x_fs_onWriteSoundFileResponse,\\n        },\\n        sendSoundStreamData: {\\n            type: 'proxy',\\n            value: (operationId, sound) => {\\n                const soundPointer = lowerListOfFloatArrays(rawModule, engineData.bitDepth, sound);\\n                const writtenFrameCount = rawModule.x_fs_onSoundStreamData(operationId, soundPointer);\\n                updateWasmInOuts(rawModule, engineData);\\n                return writtenFrameCount;\\n            },\\n        },\\n        closeSoundStream: {\\n            type: 'proxy',\\n            value: rawModule.x_fs_onCloseSoundStream,\\n        },\\n        onReadSoundFile: { type: 'callback', value: () => undefined },\\n        onWriteSoundFile: { type: 'callback', value: () => undefined },\\n        onOpenSoundReadStream: { type: 'callback', value: () => undefined },\\n        onOpenSoundWriteStream: { type: 'callback', value: () => undefined },\\n        onSoundStreamData: { type: 'callback', value: () => undefined },\\n        onCloseSoundStream: { type: 'callback', value: () => undefined },\\n    });\\n    const createFsImports = (forwardReferences) => {\\n        let wasmImports = {\\n            i_fs_readSoundFile: (operationId, urlPointer, infoPointer) => {\\n                const url = liftString(forwardReferences.rawModule, urlPointer);\\n                const info = liftMessage(forwardReferences.rawModule, infoPointer);\\n                forwardReferences.modules.fs.onReadSoundFile(operationId, url, info);\\n            },\\n            i_fs_writeSoundFile: (operationId, soundPointer, urlPointer, infoPointer) => {\\n                const sound = readListOfFloatArrays(forwardReferences.rawModule, forwardReferences.engineData.bitDepth, soundPointer);\\n                const url = liftString(forwardReferences.rawModule, urlPointer);\\n                const info = liftMessage(forwardReferences.rawModule, infoPointer);\\n                forwardReferences.modules.fs.onWriteSoundFile(operationId, sound, url, info);\\n            },\\n            i_fs_openSoundReadStream: (operationId, urlPointer, infoPointer) => {\\n                const url = liftString(forwardReferences.rawModule, urlPointer);\\n                const info = liftMessage(forwardReferences.rawModule, infoPointer);\\n                updateWasmInOuts(forwardReferences.rawModule, forwardReferences.engineData);\\n                forwardReferences.modules.fs.onOpenSoundReadStream(operationId, url, info);\\n            },\\n            i_fs_openSoundWriteStream: (operationId, urlPointer, infoPointer) => {\\n                const url = liftString(forwardReferences.rawModule, urlPointer);\\n                const info = liftMessage(forwardReferences.rawModule, infoPointer);\\n                forwardReferences.modules.fs.onOpenSoundWriteStream(operationId, url, info);\\n            },\\n            i_fs_sendSoundStreamData: (operationId, blockPointer) => {\\n                const block = readListOfFloatArrays(forwardReferences.rawModule, forwardReferences.engineData.bitDepth, blockPointer);\\n                forwardReferences.modules.fs.onSoundStreamData(operationId, block);\\n            },\\n            i_fs_closeSoundStream: (...args) => forwardReferences.modules.fs.onCloseSoundStream(...args),\\n        };\\n        return wasmImports;\\n    };\\n\\n    const createCommonsBindings = (rawModule, engineData) => ({\\n        getArray: {\\n            type: 'proxy',\\n            value: (arrayName) => {\\n                const arrayNamePointer = lowerString(rawModule, arrayName);\\n                const arrayPointer = rawModule.commons_getArray(arrayNamePointer);\\n                return readTypedArray(rawModule, engineData.arrayType, arrayPointer);\\n            },\\n        },\\n        setArray: {\\n            type: 'proxy',\\n            value: (arrayName, array) => {\\n                const stringPointer = lowerString(rawModule, arrayName);\\n                const { arrayPointer } = lowerFloatArray(rawModule, engineData.bitDepth, array);\\n                rawModule.commons_setArray(stringPointer, arrayPointer);\\n                updateWasmInOuts(rawModule, engineData);\\n            },\\n        },\\n    });\\n\\n    const createEngine = async (wasmBuffer) => {\\n        const { rawModule, engineData, forwardReferences } = await createRawModule(wasmBuffer);\\n        const engineBindings = await createBindings(rawModule, engineData, forwardReferences);\\n        return createModule(rawModule, engineBindings);\\n    };\\n    const createRawModule = async (wasmBuffer) => {\\n        const metadata = await readMetadata(wasmBuffer);\\n        const forwardReferences = { modules: {} };\\n        const wasmImports = {\\n            ...createFsImports(forwardReferences),\\n            ...ioMsgSendersImports(forwardReferences, metadata),\\n        };\\n        const bitDepth = metadata.audioSettings.bitDepth;\\n        const arrayType = getFloatArrayType(bitDepth);\\n        const engineData = {\\n            metadata,\\n            wasmOutput: new arrayType(0),\\n            wasmInput: new arrayType(0),\\n            arrayType,\\n            bitDepth,\\n            blockSize: 0,\\n        };\\n        const wasmInstance = await instantiateWasmModule(wasmBuffer, {\\n            input: wasmImports,\\n        });\\n        const rawModule = wasmInstance.exports;\\n        return { rawModule, engineData, forwardReferences };\\n    };\\n    const createBindings = async (rawModule, engineData, forwardReferences) => {\\n        const commons = createModule(rawModule, createCommonsBindings(rawModule, engineData));\\n        const fs = createModule(rawModule, createFsBindings(rawModule, engineData));\\n        const io = {\\n            messageReceivers: createModule(rawModule, createIoMessageReceiversBindings(rawModule, engineData)),\\n            messageSenders: createModule(rawModule, createIoMessageSendersBindings(rawModule, engineData)),\\n        };\\n        forwardReferences.modules.fs = fs;\\n        forwardReferences.modules.io = io;\\n        forwardReferences.engineData = engineData;\\n        forwardReferences.rawModule = rawModule;\\n        return {\\n            ...createEngineLifecycleBindings(rawModule, engineData),\\n            metadata: { type: 'proxy', value: engineData.metadata },\\n            commons: { type: 'proxy', value: commons },\\n            fs: { type: 'proxy', value: fs },\\n            io: { type: 'proxy', value: io },\\n        };\\n    };\\n\\n    exports.createBindings = createBindings;\\n    exports.createEngine = createEngine;\\n    exports.createRawModule = createRawModule;\\n\\n    return exports;\\n\\n})({});\\n//# sourceMappingURL=assemblyscript-wasm-bindings.iife.js.map\\n\";\n\n  var JavaScriptBindingsCode = \"var JavaScriptBindings = (function (exports) {\\n    'use strict';\\n\\n    const getFloatArrayType = (bitDepth) => bitDepth === 64 ? Float64Array : Float32Array;\\n    const createModule = (rawModule, bindings) => new Proxy({}, {\\n        get: (_, k) => {\\n            if (bindings.hasOwnProperty(k)) {\\n                const key = String(k);\\n                const bindingSpec = bindings[key];\\n                switch (bindingSpec.type) {\\n                    case 'raw':\\n                        if (k in rawModule) {\\n                            return rawModule[key];\\n                        }\\n                        else {\\n                            throw new Error(`Key ${String(key)} doesn't exist in raw module`);\\n                        }\\n                    case 'proxy':\\n                    case 'callback':\\n                        return bindingSpec.value;\\n                }\\n            }\\n            else {\\n                return undefined;\\n            }\\n        },\\n        set: (_, k, newValue) => {\\n            if (bindings.hasOwnProperty(String(k))) {\\n                const key = String(k);\\n                const bindingSpec = bindings[key];\\n                if (bindingSpec.type === 'callback') {\\n                    bindingSpec.value = newValue;\\n                }\\n                else {\\n                    throw new Error(`Binding key ${String(key)} is read-only`);\\n                }\\n            }\\n            else {\\n                throw new Error(`Key ${String(k)} is not defined in bindings`);\\n            }\\n            return true;\\n        },\\n    });\\n\\n    const createRawModule = (code) => new Function(`\\n        ${code}\\n        return exports\\n    `)();\\n    const createBindings = (rawModule) => ({\\n        fs: { type: 'proxy', value: createFsModule(rawModule) },\\n        metadata: { type: 'raw' },\\n        configure: { type: 'raw' },\\n        loop: { type: 'raw' },\\n        io: { type: 'raw' },\\n        commons: {\\n            type: 'proxy',\\n            value: createCommonsModule(rawModule, rawModule.metadata.audioSettings.bitDepth),\\n        },\\n    });\\n    const createEngine = (code) => {\\n        const rawModule = createRawModule(code);\\n        return createModule(rawModule, createBindings(rawModule));\\n    };\\n    const createFsModule = (rawModule) => {\\n        const fs = createModule(rawModule, {\\n            onReadSoundFile: { type: 'callback', value: () => undefined },\\n            onWriteSoundFile: { type: 'callback', value: () => undefined },\\n            onOpenSoundReadStream: { type: 'callback', value: () => undefined },\\n            onOpenSoundWriteStream: { type: 'callback', value: () => undefined },\\n            onSoundStreamData: { type: 'callback', value: () => undefined },\\n            onCloseSoundStream: { type: 'callback', value: () => undefined },\\n            sendReadSoundFileResponse: {\\n                type: 'proxy',\\n                value: rawModule.x_fs_onReadSoundFileResponse,\\n            },\\n            sendWriteSoundFileResponse: {\\n                type: 'proxy',\\n                value: rawModule.x_fs_onWriteSoundFileResponse,\\n            },\\n            sendSoundStreamData: {\\n                type: 'proxy',\\n                value: rawModule.x_fs_onSoundStreamData,\\n            },\\n            closeSoundStream: {\\n                type: 'proxy',\\n                value: rawModule.x_fs_onCloseSoundStream,\\n            },\\n        });\\n        rawModule.i_fs_openSoundWriteStream = (...args) => fs.onOpenSoundWriteStream(...args);\\n        rawModule.i_fs_sendSoundStreamData = (...args) => fs.onSoundStreamData(...args);\\n        rawModule.i_fs_openSoundReadStream = (...args) => fs.onOpenSoundReadStream(...args);\\n        rawModule.i_fs_closeSoundStream = (...args) => fs.onCloseSoundStream(...args);\\n        rawModule.i_fs_writeSoundFile = (...args) => fs.onWriteSoundFile(...args);\\n        rawModule.i_fs_readSoundFile = (...args) => fs.onReadSoundFile(...args);\\n        return fs;\\n    };\\n    const createCommonsModule = (rawModule, bitDepth) => {\\n        const floatArrayType = getFloatArrayType(bitDepth);\\n        return createModule(rawModule, {\\n            getArray: { type: 'proxy', value: rawModule.commons_getArray },\\n            setArray: {\\n                type: 'proxy',\\n                value: (arrayName, array) => rawModule.commons_setArray(arrayName, new floatArrayType(array)),\\n            },\\n        });\\n    };\\n\\n    exports.createBindings = createBindings;\\n    exports.createEngine = createEngine;\\n    exports.createRawModule = createRawModule;\\n\\n    return exports;\\n\\n})({});\\n//# sourceMappingURL=javascript-bindings.iife.js.map\\n\";\n\n  var fetchRetry$1 = function (fetch, defaults) {\n    defaults = defaults || {};\n    if (typeof fetch !== 'function') {\n      throw new ArgumentError('fetch must be a function');\n    }\n\n    if (typeof defaults !== 'object') {\n      throw new ArgumentError('defaults must be an object');\n    }\n\n    if (defaults.retries !== undefined && !isPositiveInteger(defaults.retries)) {\n      throw new ArgumentError('retries must be a positive integer');\n    }\n\n    if (defaults.retryDelay !== undefined && !isPositiveInteger(defaults.retryDelay) && typeof defaults.retryDelay !== 'function') {\n      throw new ArgumentError('retryDelay must be a positive integer or a function returning a positive integer');\n    }\n\n    if (defaults.retryOn !== undefined && !Array.isArray(defaults.retryOn) && typeof defaults.retryOn !== 'function') {\n      throw new ArgumentError('retryOn property expects an array or function');\n    }\n\n    var baseDefaults = {\n      retries: 3,\n      retryDelay: 1000,\n      retryOn: [],\n    };\n\n    defaults = Object.assign(baseDefaults, defaults);\n\n    return function fetchRetry(input, init) {\n      var retries = defaults.retries;\n      var retryDelay = defaults.retryDelay;\n      var retryOn = defaults.retryOn;\n\n      if (init && init.retries !== undefined) {\n        if (isPositiveInteger(init.retries)) {\n          retries = init.retries;\n        } else {\n          throw new ArgumentError('retries must be a positive integer');\n        }\n      }\n\n      if (init && init.retryDelay !== undefined) {\n        if (isPositiveInteger(init.retryDelay) || (typeof init.retryDelay === 'function')) {\n          retryDelay = init.retryDelay;\n        } else {\n          throw new ArgumentError('retryDelay must be a positive integer or a function returning a positive integer');\n        }\n      }\n\n      if (init && init.retryOn) {\n        if (Array.isArray(init.retryOn) || (typeof init.retryOn === 'function')) {\n          retryOn = init.retryOn;\n        } else {\n          throw new ArgumentError('retryOn property expects an array or function');\n        }\n      }\n\n      // eslint-disable-next-line no-undef\n      return new Promise(function (resolve, reject) {\n        var wrappedFetch = function (attempt) {\n          // As of node 18, this is no longer needed since node comes with native support for fetch:\n          /* istanbul ignore next */\n          var _input =\n            typeof Request !== 'undefined' && input instanceof Request\n              ? input.clone()\n              : input;\n          fetch(_input, init)\n            .then(function (response) {\n              if (Array.isArray(retryOn) && retryOn.indexOf(response.status) === -1) {\n                resolve(response);\n              } else if (typeof retryOn === 'function') {\n                try {\n                  // eslint-disable-next-line no-undef\n                  return Promise.resolve(retryOn(attempt, null, response))\n                    .then(function (retryOnResponse) {\n                      if(retryOnResponse) {\n                        retry(attempt, null, response);\n                      } else {\n                        resolve(response);\n                      }\n                    }).catch(reject);\n                } catch (error) {\n                  reject(error);\n                }\n              } else {\n                if (attempt < retries) {\n                  retry(attempt, null, response);\n                } else {\n                  resolve(response);\n                }\n              }\n            })\n            .catch(function (error) {\n              if (typeof retryOn === 'function') {\n                try {\n                  // eslint-disable-next-line no-undef\n                  Promise.resolve(retryOn(attempt, error, null))\n                    .then(function (retryOnResponse) {\n                      if(retryOnResponse) {\n                        retry(attempt, error, null);\n                      } else {\n                        reject(error);\n                      }\n                    })\n                    .catch(function(error) {\n                      reject(error);\n                    });\n                } catch(error) {\n                  reject(error);\n                }\n              } else if (attempt < retries) {\n                retry(attempt, error, null);\n              } else {\n                reject(error);\n              }\n            });\n        };\n\n        function retry(attempt, error, response) {\n          var delay = (typeof retryDelay === 'function') ?\n            retryDelay(attempt, error, response) : retryDelay;\n          setTimeout(function () {\n            wrappedFetch(++attempt);\n          }, delay);\n        }\n\n        wrappedFetch(0);\n      });\n    };\n  };\n\n  function isPositiveInteger(value) {\n    return Number.isInteger(value) && value >= 0;\n  }\n\n  function ArgumentError(message) {\n    this.name = 'ArgumentError';\n    this.message = message;\n  }\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const fetchRetry = fetchRetry$1(fetch);\n  /**\n   * Note : the audio worklet feature is available only in secure context.\n   * This function will fail when used in insecure context (non-https, etc ...)\n   * @see https://developer.mozilla.org/en-US/docs/Web/API/AudioWorklet\n   */\n  const addModule = async (context, processorCode) => {\n      const blob = new Blob([processorCode], { type: 'text/javascript' });\n      const workletProcessorUrl = URL.createObjectURL(blob);\n      return context.audioWorklet.addModule(workletProcessorUrl);\n  };\n  // TODO : testing\n  const fetchFile = async (url) => {\n      let response;\n      try {\n          response = await fetchRetry(url, { retries: 3 });\n      }\n      catch (err) {\n          throw new FileError(response.status, err.toString());\n      }\n      if (!response.ok) {\n          const responseText = await response.text();\n          throw new FileError(response.status, responseText);\n      }\n      return response.arrayBuffer();\n  };\n  const audioBufferToArray = (audioBuffer) => {\n      const sound = [];\n      for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {\n          sound.push(audioBuffer.getChannelData(channel));\n      }\n      return sound;\n  };\n  // TODO : testing\n  const fixSoundChannelCount = (sound, targetChannelCount) => {\n      if (sound.length === 0) {\n          throw new Error(`Received empty sound`);\n      }\n      const floatArrayType = sound[0].constructor;\n      const frameCount = sound[0].length;\n      const fixedSound = sound.slice(0, targetChannelCount);\n      while (sound.length < targetChannelCount) {\n          fixedSound.push(new floatArrayType(frameCount));\n      }\n      return fixedSound;\n  };\n  const resolveRelativeUrl = (rootUrl, relativeUrl) => {\n      return new URL(relativeUrl, rootUrl).href;\n  };\n  class FileError extends Error {\n      constructor(status, msg) {\n          super(`Error ${status} : ${msg}`);\n      }\n  }\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  // TODO : manage transferables\n  class WebPdWorkletNode extends AudioWorkletNode {\n      constructor(context) {\n          super(context, 'webpd-node', {\n              numberOfOutputs: 1,\n              outputChannelCount: [2],\n          });\n      }\n      destroy() {\n          this.port.postMessage({\n              type: 'destroy',\n              payload: {},\n          });\n      }\n  }\n  // Concatenate WorkletProcessor code with the Wasm bindings it needs\n  const WEBPD_WORKLET_PROCESSOR_CODE = AssemblyScriptWasmBindingsCode +\n      ';\\n' +\n      JavaScriptBindingsCode +\n      ';\\n' +\n      _WebPdWorkletProcessorCode;\n  const registerWebPdWorkletNode = (context) => {\n      return addModule(context, WEBPD_WORKLET_PROCESSOR_CODE);\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const FILES = {};\n  const STREAMS = {};\n  class FakeStream {\n      constructor(url, sound) {\n          this.url = url;\n          this.sound = sound;\n          this.frameCount = sound[0].length;\n          this.readPosition = 0;\n      }\n  }\n  const read = async (url) => {\n      if (FILES[url]) {\n          return FILES[url];\n      }\n      const arrayBuffer = await fetchFile(url);\n      return {\n          type: 'binary',\n          data: arrayBuffer,\n      };\n  };\n  // TODO : testing\n  const readSound = async (url, context) => {\n      let fakeFile = FILES[url] || (await read(url));\n      switch (fakeFile.type) {\n          case 'binary':\n              const audioBuffer = await context.decodeAudioData(fakeFile.data);\n              return audioBufferToArray(audioBuffer);\n          case 'sound':\n              // We copy the data here o it can be manipulated freely by the host.\n              // e.g. if the buffer is sent as transferrable to the node we don't want the original to be transferred.\n              return fakeFile.data.map((array) => array.slice());\n      }\n  };\n  const writeSound = async (sound, url) => {\n      FILES[url] = {\n          type: 'sound',\n          data: sound,\n      };\n  };\n  const readStreamSound = async (operationId, url, channelCount, context) => {\n      const sound = await readSound(url, context);\n      STREAMS[operationId] = new FakeStream(url, fixSoundChannelCount(sound, channelCount));\n      return STREAMS[operationId];\n  };\n  const writeStreamSound = async (operationId, url, channelCount) => {\n      const emptySound = [];\n      for (let channel = 0; channel < channelCount; channel++) {\n          emptySound.push(new Float32Array(0));\n      }\n      STREAMS[operationId] = new FakeStream(url, emptySound);\n      FILES[url] = {\n          type: 'sound',\n          data: emptySound,\n      };\n      return STREAMS[operationId];\n  };\n  const getStream = (operationId) => {\n      return STREAMS[operationId];\n  };\n  const killStream = (operationId) => {\n      console.log('KILL STREAM', operationId);\n      delete STREAMS[operationId];\n  };\n  const pullBlock = (stream, frameCount) => {\n      const block = stream.sound.map((array) => array.slice(stream.readPosition, stream.readPosition + frameCount));\n      stream.readPosition += frameCount;\n      return block;\n  };\n  const pushBlock = (stream, block) => {\n      stream.sound = stream.sound.map((channelData, channel) => {\n          const concatenated = new Float32Array(channelData.length + block[channel].length);\n          concatenated.set(channelData);\n          concatenated.set(block[channel], channelData.length);\n          return concatenated;\n      });\n      stream.frameCount = stream.sound[0].length;\n      FILES[stream.url].data = stream.sound;\n  };\n  var fakeFs = {\n      writeSound,\n      readSound,\n      readStreamSound,\n      writeStreamSound,\n      pullBlock,\n      pushBlock,\n  };\n\n  var closeSoundStream = async (_, payload, __) => {\n      if (payload.functionName === 'onCloseSoundStream') {\n          killStream(payload.arguments[0]);\n      }\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  /** Generate an integer series from 0 to `count` (non-inclusive). */\n  const countTo$1 = (count) => {\n      const results = [];\n      for (let i = 0; i < count; i++) {\n          results.push(i);\n      }\n      return results;\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const Var$1 = (typeName, name, value) => _preventToString$1({\n      astType: 'Var',\n      name,\n      type: typeName,\n      value: _prepareVarValue$1(value),\n  });\n  const ConstVar$1 = (typeName, name, value) => _preventToString$1({\n      astType: 'ConstVar',\n      name,\n      type: typeName,\n      value: _prepareVarValue$1(value),\n  });\n  const Func$1 = (name, args = [], returnType = 'void') => (strings, ...content) => _preventToString$1({\n      astType: 'Func',\n      name,\n      args,\n      returnType,\n      body: ast$1(strings, ...content),\n  });\n  const AnonFunc$1 = (args = [], returnType = 'void') => (strings, ...content) => _preventToString$1({\n      astType: 'Func',\n      name: null,\n      args,\n      returnType,\n      body: ast$1(strings, ...content),\n  });\n  const Class$1 = (name, members) => _preventToString$1({\n      astType: 'Class',\n      name,\n      members,\n  });\n  const Sequence$1 = (content) => ({\n      astType: 'Sequence',\n      content: _processRawContent$1(_intersperse$1(content, countTo$1(content.length - 1).map(() => '\\n'))),\n  });\n  const ast$1 = (strings, ...content) => _preventToString$1({\n      astType: 'Sequence',\n      content: _processRawContent$1(_intersperse$1(strings, content)),\n  });\n  const _processRawContent$1 = (content) => {\n      // 1. Flatten arrays and AstSequence, filter out nulls, and convert numbers to strings\n      // Basically converts input to an Array<AstContent>.\n      const flattenedAndFiltered = content.flatMap((element) => {\n          if (typeof element === 'string') {\n              return [element];\n          }\n          else if (typeof element === 'number') {\n              return [element.toString()];\n          }\n          else {\n              if (element === null) {\n                  return [];\n              }\n              else if (Array.isArray(element)) {\n                  return _processRawContent$1(_intersperse$1(element, countTo$1(element.length - 1).map(() => '\\n')));\n              }\n              else if (typeof element === 'object' &&\n                  element.astType === 'Sequence') {\n                  return element.content;\n              }\n              else {\n                  return [element];\n              }\n          }\n      });\n      // 2. Combine adjacent strings\n      const [combinedContent, remainingString] = flattenedAndFiltered.reduce(([combinedContent, currentString], element) => {\n          if (typeof element === 'string') {\n              return [combinedContent, currentString + element];\n          }\n          else {\n              if (currentString.length) {\n                  return [[...combinedContent, currentString, element], ''];\n              }\n              else {\n                  return [[...combinedContent, element], ''];\n              }\n          }\n      }, [[], '']);\n      if (remainingString.length) {\n          combinedContent.push(remainingString);\n      }\n      return combinedContent;\n  };\n  /**\n   * Intersperse content from array1 with content from array2.\n   * `array1.length` must be equal to `array2.length + 1`.\n   */\n  const _intersperse$1 = (array1, array2) => {\n      if (array1.length === 0) {\n          return [];\n      }\n      return array1\n          .slice(1)\n          .reduce((combinedContent, element, i) => combinedContent.concat([array2[i], element]), [array1[0]]);\n  };\n  /**\n   * Prevents AST elements from being rendered as a string, as this is\n   * most likely an error due to unproper use of `ast`.\n   * Deacivated. Activate for debugging by uncommenting the line below.\n   */\n  const _preventToString$1 = (element) => ({\n      ...element,\n      // Uncomment this to activate\n      // toString: () => { throw new Error(`Rendering element ${elemennt.astType} as string is probably an error`) }\n  });\n  const _prepareVarValue$1 = (value) => {\n      if (typeof value === 'number') {\n          return Sequence$1([value.toString()]);\n      }\n      else if (typeof value === 'string') {\n          return Sequence$1([value]);\n      }\n      else {\n          return value;\n      }\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const bufCore$1 = () => Sequence$1([\n      /**\n       * Ring buffer\n       */\n      Class$1('buf_SoundBuffer', [\n          Var$1('FloatArray', 'data'),\n          Var$1('Int', 'length'),\n          Var$1('Int', 'writeCursor'),\n          Var$1('Int', 'pullAvailableLength'),\n      ]),\n      /** Erases all the content from the buffer */\n      Func$1('buf_clear', [\n          Var$1('buf_SoundBuffer', 'buffer')\n      ], 'void') `\n        buffer.data.fill(0)\n    `,\n      /** Erases all the content from the buffer */\n      Func$1('buf_create', [\n          Var$1('Int', 'length')\n      ], 'buf_SoundBuffer') `\n        return {\n            data: createFloatArray(length),\n            length: length,\n            writeCursor: 0,\n            pullAvailableLength: 0,\n        }\n    `\n  ]);\n  const bufPushPull$1 = {\n      codeGenerator: () => Sequence$1([\n          /**\n           * Pushes a block to the buffer, throwing an error if the buffer is full.\n           * If the block is written successfully, {@link buf_SoundBuffer#writeCursor}\n           * is moved corresponding with the length of data written.\n           *\n           * @todo : Optimize by allowing to read/write directly from host\n           */\n          Func$1('buf_pushBlock', [\n              Var$1('buf_SoundBuffer', 'buffer'),\n              Var$1('FloatArray', 'block')\n          ], 'Int') `\n            if (buffer.pullAvailableLength + block.length > buffer.length) {\n                throw new Error('buffer full')\n            }\n\n            ${Var$1('Int', 'left', 'block.length')}\n            while (left > 0) {\n                ${ConstVar$1('Int', 'lengthToWrite', `toInt(Math.min(\n                    toFloat(buffer.length - buffer.writeCursor), \n                    toFloat(left),\n                ))`)}\n                buffer.data.set(\n                    block.subarray(\n                        block.length - left, \n                        block.length - left + lengthToWrite\n                    ), \n                    buffer.writeCursor\n                )\n                left -= lengthToWrite\n                buffer.writeCursor = (buffer.writeCursor + lengthToWrite) % buffer.length\n                buffer.pullAvailableLength += lengthToWrite\n            }\n            return buffer.pullAvailableLength\n        `,\n          /**\n           * Pulls a single sample from the buffer.\n           * This is a destructive operation, and the sample will be\n           * unavailable for subsequent readers with the same operation.\n           */\n          Func$1('buf_pullSample', [\n              Var$1('buf_SoundBuffer', 'buffer')\n          ], 'Float') `\n            if (buffer.pullAvailableLength <= 0) {\n                return 0\n            }\n            ${ConstVar$1('Int', 'readCursor', 'buffer.writeCursor - buffer.pullAvailableLength')}\n            buffer.pullAvailableLength -= 1\n            return buffer.data[readCursor >= 0 ? readCursor : buffer.length + readCursor]\n        `\n      ]),\n      dependencies: [bufCore$1],\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const msg$1 = {\n      codeGenerator: ({ target }) => {\n          const declareFuncs = {\n              msg_create: Func$1('msg_create', [Var$1('MessageTemplate', 'template')], 'Message'),\n              msg_writeStringToken: Func$1('msg_writeStringToken', [\n                  Var$1('Message', 'message'),\n                  Var$1('Int', 'tokenIndex'),\n                  Var$1('string', 'value'),\n              ], 'void'),\n              msg_writeFloatToken: Func$1('msg_writeFloatToken', [\n                  Var$1('Message', 'message'),\n                  Var$1('Int', 'tokenIndex'),\n                  Var$1('MessageFloatToken', 'value'),\n              ], 'void'),\n              msg_readStringToken: Func$1('msg_readStringToken', [\n                  Var$1('Message', 'message'),\n                  Var$1('Int', 'tokenIndex'),\n              ], 'string'),\n              msg_readFloatToken: Func$1('msg_readFloatToken', [\n                  Var$1('Message', 'message'),\n                  Var$1('Int', 'tokenIndex'),\n              ], 'MessageFloatToken'),\n              msg_getLength: Func$1('msg_getLength', [\n                  Var$1('Message', 'message')\n              ], 'Int'),\n              msg_getTokenType: Func$1('msg_getTokenType', [\n                  Var$1('Message', 'message'),\n                  Var$1('Int', 'tokenIndex'),\n              ], 'Int'),\n              msg_isStringToken: Func$1('msg_isStringToken', [\n                  Var$1('Message', 'message'),\n                  Var$1('Int', 'tokenIndex'),\n              ], 'boolean'),\n              msg_isFloatToken: Func$1('msg_isFloatToken', [\n                  Var$1('Message', 'message'),\n                  Var$1('Int', 'tokenIndex'),\n              ], 'boolean'),\n              msg_isMatching: Func$1('msg_isMatching', [\n                  Var$1('Message', 'message'),\n                  Var$1('Array<MessageHeaderEntry>', 'tokenTypes'),\n              ], 'boolean'),\n              msg_floats: Func$1('msg_floats', [\n                  Var$1('Array<Float>', 'values'),\n              ], 'Message'),\n              msg_strings: Func$1('msg_strings', [\n                  Var$1('Array<string>', 'values'),\n              ], 'Message'),\n              msg_display: Func$1('msg_display', [\n                  Var$1('Message', 'message'),\n              ], 'string')\n          };\n          if (target === 'assemblyscript') {\n              return Sequence$1([\n                  `\n                type MessageFloatToken = Float\n                type MessageCharToken = Int\n\n                type MessageTemplate = Array<Int>\n                type MessageHeaderEntry = Int\n                type MessageHeader = Int32Array\n                `,\n                  ConstVar$1('MessageHeaderEntry', 'MSG_FLOAT_TOKEN', '0'),\n                  ConstVar$1('MessageHeaderEntry', 'MSG_STRING_TOKEN', '1'),\n                  // =========================== EXPORTED API\n                  Func$1('x_msg_create', [\n                      Var$1('Int32Array', 'templateTypedArray')\n                  ], 'Message') `\n                    const template: MessageTemplate = new Array<Int>(templateTypedArray.length)\n                    for (let i: Int = 0; i < templateTypedArray.length; i++) {\n                        template[i] = templateTypedArray[i]\n                    }\n                    return msg_create(template)\n                `,\n                  Func$1('x_msg_getTokenTypes', [\n                      Var$1('Message', 'message')\n                  ], 'MessageHeader') `\n                    return message.tokenTypes\n                `,\n                  Func$1('x_msg_createTemplate', [\n                      Var$1('i32', 'length')\n                  ], 'Int32Array') `\n                    return new Int32Array(length)\n                `,\n                  // =========================== MSG API\n                  declareFuncs.msg_create `\n                    let i: Int = 0\n                    let byteCount: Int = 0\n                    let tokenTypes: Array<MessageHeaderEntry> = []\n                    let tokenPositions: Array<MessageHeaderEntry> = []\n\n                    i = 0\n                    while (i < template.length) {\n                        switch(template[i]) {\n                            case MSG_FLOAT_TOKEN:\n                                byteCount += sizeof<MessageFloatToken>()\n                                tokenTypes.push(MSG_FLOAT_TOKEN)\n                                tokenPositions.push(byteCount)\n                                i += 1\n                                break\n                            case MSG_STRING_TOKEN:\n                                byteCount += sizeof<MessageCharToken>() * template[i + 1]\n                                tokenTypes.push(MSG_STRING_TOKEN)\n                                tokenPositions.push(byteCount)\n                                i += 2\n                                break\n                            default:\n                                throw new Error(\"unknown token type : \" + template[i].toString())\n                        }\n                    }\n\n                    const tokenCount = tokenTypes.length\n                    const headerByteCount = _msg_computeHeaderLength(tokenCount) * sizeof<MessageHeaderEntry>()\n                    byteCount += headerByteCount\n\n                    const buffer = new ArrayBuffer(byteCount)\n                    const dataView = new DataView(buffer)\n                    let writePosition: Int = 0\n                    \n                    dataView.setInt32(writePosition, tokenCount)\n                    writePosition += sizeof<MessageHeaderEntry>()\n\n                    for (i = 0; i < tokenCount; i++) {\n                        dataView.setInt32(writePosition, tokenTypes[i])\n                        writePosition += sizeof<MessageHeaderEntry>()\n                    }\n\n                    dataView.setInt32(writePosition, headerByteCount)\n                    writePosition += sizeof<MessageHeaderEntry>()\n                    for (i = 0; i < tokenCount; i++) {\n                        dataView.setInt32(writePosition, headerByteCount + tokenPositions[i])\n                        writePosition += sizeof<MessageHeaderEntry>()\n                    }\n\n                    const header = _msg_unpackHeader(dataView, tokenCount)\n                    return {\n                        dataView,\n                        tokenCount,\n                        header,\n                        tokenTypes: _msg_unpackTokenTypes(header),\n                        tokenPositions: _msg_unpackTokenPositions(header),\n                    }\n                `,\n                  declareFuncs.msg_writeStringToken `\n                    const startPosition = message.tokenPositions[tokenIndex]\n                    const endPosition = message.tokenPositions[tokenIndex + 1]\n                    const expectedStringLength: Int = (endPosition - startPosition) / sizeof<MessageCharToken>()\n                    if (value.length !== expectedStringLength) {\n                        throw new Error('Invalid string size, specified ' + expectedStringLength.toString() + ', received ' + value.length.toString())\n                    }\n\n                    for (let i = 0; i < value.length; i++) {\n                        message.dataView.setInt32(\n                            startPosition + i * sizeof<MessageCharToken>(), \n                            value.codePointAt(i)\n                        )\n                    }\n                `,\n                  declareFuncs.msg_writeFloatToken `\n                    setFloatDataView(message.dataView, message.tokenPositions[tokenIndex], value)\n                `,\n                  declareFuncs.msg_readStringToken `\n                    const startPosition = message.tokenPositions[tokenIndex]\n                    const endPosition = message.tokenPositions[tokenIndex + 1]\n                    const stringLength: Int = (endPosition - startPosition) / sizeof<MessageCharToken>()\n                    let value: string = ''\n                    for (let i = 0; i < stringLength; i++) {\n                        value += String.fromCodePoint(message.dataView.getInt32(startPosition + sizeof<MessageCharToken>() * i))\n                    }\n                    return value\n                `,\n                  declareFuncs.msg_readFloatToken `\n                    return getFloatDataView(message.dataView, message.tokenPositions[tokenIndex])\n                `,\n                  declareFuncs.msg_getLength `\n                    return message.tokenTypes.length\n                `,\n                  declareFuncs.msg_getTokenType `\n                    return message.tokenTypes[tokenIndex]\n                `,\n                  declareFuncs.msg_isStringToken `\n                    return msg_getTokenType(message, tokenIndex) === MSG_STRING_TOKEN\n                `,\n                  declareFuncs.msg_isFloatToken `\n                    return msg_getTokenType(message, tokenIndex) === MSG_FLOAT_TOKEN\n                `,\n                  declareFuncs.msg_isMatching `\n                    if (message.tokenTypes.length !== tokenTypes.length) {\n                        return false\n                    }\n                    for (let i: Int = 0; i < tokenTypes.length; i++) {\n                        if (message.tokenTypes[i] !== tokenTypes[i]) {\n                            return false\n                        }\n                    }\n                    return true\n                `,\n                  declareFuncs.msg_floats `\n                    const message: Message = msg_create(values.map<MessageHeaderEntry>(v => MSG_FLOAT_TOKEN))\n                    for (let i: Int = 0; i < values.length; i++) {\n                        msg_writeFloatToken(message, i, values[i])\n                    }\n                    return message\n                `,\n                  declareFuncs.msg_strings `\n                    const template: MessageTemplate = []\n                    for (let i: Int = 0; i < values.length; i++) {\n                        template.push(MSG_STRING_TOKEN)\n                        template.push(values[i].length)\n                    }\n                    const message: Message = msg_create(template)\n                    for (let i: Int = 0; i < values.length; i++) {\n                        msg_writeStringToken(message, i, values[i])\n                    }\n                    return message\n                `,\n                  declareFuncs.msg_display `\n                    let displayArray: Array<string> = []\n                    for (let i: Int = 0; i < msg_getLength(message); i++) {\n                        if (msg_isFloatToken(message, i)) {\n                            displayArray.push(msg_readFloatToken(message, i).toString())\n                        } else {\n                            displayArray.push('\"' + msg_readStringToken(message, i) + '\"')\n                        }\n                    }\n                    return '[' + displayArray.join(', ') + ']'\n                `,\n                  // =========================== PRIVATE\n                  // Message header : [\n                  //      <Token count>, \n                  //      <Token 1 type>,  ..., <Token N type>, \n                  //      <Token 1 start>, ..., <Token N start>, <Token N end>\n                  //      ... DATA ...\n                  // ]\n                  Class$1('Message', [\n                      Var$1('DataView', 'dataView'),\n                      Var$1('MessageHeader', 'header'),\n                      Var$1('MessageHeaderEntry', 'tokenCount'),\n                      Var$1('MessageHeader', 'tokenTypes'),\n                      Var$1('MessageHeader', 'tokenPositions'),\n                  ]),\n                  Func$1('_msg_computeHeaderLength', [\n                      Var$1('Int', 'tokenCount')\n                  ], 'Int') `\n                    return 1 + tokenCount * 2 + 1\n                `,\n                  Func$1('_msg_unpackTokenCount', [\n                      Var$1('DataView', 'messageDataView')\n                  ], 'MessageHeaderEntry') `\n                    return messageDataView.getInt32(0)\n                `,\n                  Func$1('_msg_unpackHeader', [\n                      Var$1('DataView', 'messageDataView'),\n                      Var$1('MessageHeaderEntry', 'tokenCount'),\n                  ], 'MessageHeader') `\n                    const headerLength = _msg_computeHeaderLength(tokenCount)\n                    // TODO : why is this \\`wrap\\` not working ?\n                    // return Int32Array.wrap(messageDataView.buffer, 0, headerLength)\n                    const messageHeader = new Int32Array(headerLength)\n                    for (let i = 0; i < headerLength; i++) {\n                        messageHeader[i] = messageDataView.getInt32(sizeof<MessageHeaderEntry>() * i)\n                    }\n                    return messageHeader\n                `,\n                  Func$1('_msg_unpackTokenTypes', [\n                      Var$1('MessageHeader', 'header'),\n                  ], 'MessageHeader') `\n                    return header.slice(1, 1 + header[0])\n                `,\n                  Func$1('_msg_unpackTokenPositions', [\n                      Var$1('MessageHeader', 'header'),\n                  ], 'MessageHeader') `\n                    return header.slice(1 + header[0])\n                `,\n              ]);\n          }\n          else if (target === 'javascript') {\n              return Sequence$1([\n                  ConstVar$1('string', 'MSG_FLOAT_TOKEN', '\"number\"'),\n                  ConstVar$1('string', 'MSG_STRING_TOKEN', '\"string\"'),\n                  declareFuncs.msg_create `\n                    const m = []\n                    let i = 0\n                    while (i < template.length) {\n                        if (template[i] === MSG_STRING_TOKEN) {\n                            m.push('')\n                            i += 2\n                        } else if (template[i] === MSG_FLOAT_TOKEN) {\n                            m.push(0)\n                            i += 1\n                        }\n                    }\n                    return m\n                `,\n                  declareFuncs.msg_getLength `\n                    return message.length\n                `,\n                  declareFuncs.msg_getTokenType `\n                    return typeof message[tokenIndex]\n                `,\n                  declareFuncs.msg_isStringToken `\n                    return msg_getTokenType(message, tokenIndex) === 'string'\n                `,\n                  declareFuncs.msg_isFloatToken `\n                    return msg_getTokenType(message, tokenIndex) === 'number'\n                `,\n                  declareFuncs.msg_isMatching `\n                    return (message.length === tokenTypes.length) \n                        && message.every((v, i) => msg_getTokenType(message, i) === tokenTypes[i])\n                `,\n                  declareFuncs.msg_writeFloatToken `\n                    message[tokenIndex] = value\n                `,\n                  declareFuncs.msg_writeStringToken `\n                    message[tokenIndex] = value\n                `,\n                  declareFuncs.msg_readFloatToken `\n                    return message[tokenIndex]\n                `,\n                  declareFuncs.msg_readStringToken `\n                    return message[tokenIndex]\n                `,\n                  declareFuncs.msg_floats `\n                    return values\n                `,\n                  declareFuncs.msg_strings `\n                    return values\n                `,\n                  declareFuncs.msg_display `\n                    return '[' + message\n                        .map(t => typeof t === 'string' ? '\"' + t + '\"' : t.toString())\n                        .join(', ') + ']'\n                `,\n              ]);\n          }\n          else {\n              throw new Error(`Unexpected target: ${target}`);\n          }\n      },\n      exports: [\n          { name: 'x_msg_create', targets: ['assemblyscript'] },\n          { name: 'x_msg_getTokenTypes', targets: ['assemblyscript'] },\n          { name: 'x_msg_createTemplate', targets: ['assemblyscript'] },\n          { name: 'msg_writeStringToken', targets: ['assemblyscript'] },\n          { name: 'msg_writeFloatToken', targets: ['assemblyscript'] },\n          { name: 'msg_readStringToken', targets: ['assemblyscript'] },\n          { name: 'msg_readFloatToken', targets: ['assemblyscript'] },\n          { name: 'MSG_FLOAT_TOKEN', targets: ['assemblyscript'] },\n          { name: 'MSG_STRING_TOKEN', targets: ['assemblyscript'] },\n      ],\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const FS_OPERATION_SUCCESS$1 = 0;\n  const FS_OPERATION_FAILURE$1 = 1;\n  const fsCore$1 = {\n      codeGenerator: ({ target }) => {\n          const content = [];\n          if (target === 'assemblyscript') {\n              content.push(`\n                type fs_OperationId = Int\n                type fs_OperationStatus = Int\n                type fs_OperationCallback = (id: fs_OperationId, status: fs_OperationStatus) => void\n                type fs_OperationSoundCallback = (id: fs_OperationId, status: fs_OperationStatus, sound: FloatArray[]) => void\n                type fs_Url = string\n            `);\n          }\n          return Sequence$1([\n              ...content,\n              ConstVar$1('Int', 'FS_OPERATION_SUCCESS', FS_OPERATION_SUCCESS$1.toString()),\n              ConstVar$1('Int', 'FS_OPERATION_FAILURE', FS_OPERATION_FAILURE$1.toString()),\n              ConstVar$1('Set<fs_OperationId>', '_FS_OPERATIONS_IDS', 'new Set()'),\n              ConstVar$1('Map<fs_OperationId, fs_OperationCallback>', '_FS_OPERATIONS_CALLBACKS', 'new Map()'),\n              ConstVar$1('Map<fs_OperationId, fs_OperationSoundCallback>', '_FS_OPERATIONS_SOUND_CALLBACKS', 'new Map()'),\n              // We start at 1, because 0 is what ASC uses when host forgets to pass an arg to \n              // a function. Therefore we can get false negatives when a test happens to expect a 0.\n              Var$1('Int', '_FS_OPERATION_COUNTER', '1'),\n              Class$1('fs_SoundInfo', [\n                  Var$1('Int', 'channelCount'),\n                  Var$1('Int', 'sampleRate'),\n                  Var$1('Int', 'bitDepth'),\n                  Var$1('string', 'encodingFormat'),\n                  Var$1('string', 'endianness'),\n                  Var$1('string', 'extraOptions'),\n              ]),\n              Func$1('fs_soundInfoToMessage', [\n                  Var$1('fs_SoundInfo', 'soundInfo')\n              ], 'Message') `\n                ${ConstVar$1('Message', 'info', `msg_create([\n                    MSG_FLOAT_TOKEN,\n                    MSG_FLOAT_TOKEN,\n                    MSG_FLOAT_TOKEN,\n                    MSG_STRING_TOKEN,\n                    soundInfo.encodingFormat.length,\n                    MSG_STRING_TOKEN,\n                    soundInfo.endianness.length,\n                    MSG_STRING_TOKEN,\n                    soundInfo.extraOptions.length\n                ])`)}\n                msg_writeFloatToken(info, 0, toFloat(soundInfo.channelCount))\n                msg_writeFloatToken(info, 1, toFloat(soundInfo.sampleRate))\n                msg_writeFloatToken(info, 2, toFloat(soundInfo.bitDepth))\n                msg_writeStringToken(info, 3, soundInfo.encodingFormat)\n                msg_writeStringToken(info, 4, soundInfo.endianness)\n                msg_writeStringToken(info, 5, soundInfo.extraOptions)\n                return info\n            `,\n              Func$1('_fs_assertOperationExists', [\n                  Var$1('fs_OperationId', 'id'),\n                  Var$1('string', 'operationName'),\n              ], 'void') `\n                if (!_FS_OPERATIONS_IDS.has(id)) {\n                    throw new Error(operationName + ' operation unknown : ' + id.toString())\n                }\n            `,\n              Func$1('_fs_createOperationId', [], 'fs_OperationId') `\n                ${ConstVar$1('fs_OperationId', 'id', '_FS_OPERATION_COUNTER++')}\n                _FS_OPERATIONS_IDS.add(id)\n                return id\n            `\n          ]);\n      },\n      dependencies: [msg$1],\n  };\n  ({\n      codeGenerator: () => Sequence$1([\n          Func$1('fs_readSoundFile', [\n              Var$1('fs_Url', 'url'),\n              Var$1('fs_SoundInfo', 'soundInfo'),\n              Var$1('fs_OperationSoundCallback', 'callback'),\n          ], 'fs_OperationId') `\n            ${ConstVar$1('fs_OperationId', 'id', '_fs_createOperationId()')}\n            _FS_OPERATIONS_SOUND_CALLBACKS.set(id, callback)\n            i_fs_readSoundFile(id, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func$1('x_fs_onReadSoundFileResponse', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_OperationStatus', 'status'),\n              Var$1('FloatArray[]', 'sound'),\n          ], 'void') `\n            _fs_assertOperationExists(id, 'x_fs_onReadSoundFileResponse')\n            _FS_OPERATIONS_IDS.delete(id)\n            // Finish cleaning before calling the callback in case it would throw an error.\n            const callback = _FS_OPERATIONS_SOUND_CALLBACKS.get(id)\n            callback(id, status, sound)\n            _FS_OPERATIONS_SOUND_CALLBACKS.delete(id)\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onReadSoundFileResponse',\n          },\n      ],\n      imports: [\n          Func$1('i_fs_readSoundFile', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_Url', 'url'),\n              Var$1('Message', 'info'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsCore$1],\n  });\n  ({\n      codeGenerator: () => Sequence$1([\n          Func$1('fs_writeSoundFile', [\n              Var$1('FloatArray[]', 'sound'),\n              Var$1('fs_Url', 'url'),\n              Var$1('fs_SoundInfo', 'soundInfo'),\n              Var$1('fs_OperationCallback', 'callback'),\n          ], 'fs_OperationId') `\n            ${ConstVar$1('fs_OperationId', 'id', '_fs_createOperationId()')}\n            _FS_OPERATIONS_CALLBACKS.set(id, callback)\n            i_fs_writeSoundFile(id, sound, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func$1('x_fs_onWriteSoundFileResponse', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_OperationStatus', 'status'),\n          ], 'void') `\n            _fs_assertOperationExists(id, 'x_fs_onWriteSoundFileResponse')\n            _FS_OPERATIONS_IDS.delete(id)\n            // Finish cleaning before calling the callback in case it would throw an error.\n            ${ConstVar$1('fs_OperationCallback', 'callback', '_FS_OPERATIONS_CALLBACKS.get(id)')}\n            callback(id, status)\n            _FS_OPERATIONS_CALLBACKS.delete(id)\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onWriteSoundFileResponse',\n          },\n      ],\n      imports: [\n          Func$1('i_fs_writeSoundFile', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('FloatArray[]', 'sound'),\n              Var$1('fs_Url', 'url'),\n              Var$1('Message', 'info'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsCore$1],\n  });\n  const fsSoundStreamCore$1 = {\n      codeGenerator: () => Sequence$1([\n          ConstVar$1('Map<fs_OperationId, Array<buf_SoundBuffer>>', '_FS_SOUND_STREAM_BUFFERS', 'new Map()'),\n          ConstVar$1('Int', '_FS_SOUND_BUFFER_LENGTH', '20 * 44100'),\n          Func$1('fs_closeSoundStream', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_OperationStatus', 'status'),\n          ], 'void') `\n            if (!_FS_OPERATIONS_IDS.has(id)) {\n                return\n            }\n            _FS_OPERATIONS_IDS.delete(id)\n            _FS_OPERATIONS_CALLBACKS.get(id)(id, status)\n            _FS_OPERATIONS_CALLBACKS.delete(id)\n            // Delete this last, to give the callback \n            // a chance to save a reference to the buffer\n            // If write stream, there won't be a buffer\n            if (_FS_SOUND_STREAM_BUFFERS.has(id)) {\n                _FS_SOUND_STREAM_BUFFERS.delete(id)\n            }\n            i_fs_closeSoundStream(id, status)\n        `,\n          Func$1('x_fs_onCloseSoundStream', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_OperationStatus', 'status'),\n          ], 'void') `\n            fs_closeSoundStream(id, status)\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onCloseSoundStream',\n          },\n      ],\n      imports: [\n          Func$1('i_fs_closeSoundStream', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_OperationStatus', 'status'),\n          ], 'void') ``,\n      ],\n      dependencies: [bufCore$1, fsCore$1],\n  };\n  ({\n      codeGenerator: () => Sequence$1([\n          Func$1('fs_openSoundReadStream', [\n              Var$1('fs_Url', 'url'),\n              Var$1('fs_SoundInfo', 'soundInfo'),\n              Var$1('fs_OperationCallback', 'callback'),\n          ], 'fs_OperationId') `\n            ${ConstVar$1('fs_OperationId', 'id', '_fs_createOperationId()')}\n            ${ConstVar$1('Array<buf_SoundBuffer>', 'buffers', '[]')}\n            for (${Var$1('Int', 'channel', '0')}; channel < soundInfo.channelCount; channel++) {\n                buffers.push(buf_create(_FS_SOUND_BUFFER_LENGTH))\n            }\n            _FS_SOUND_STREAM_BUFFERS.set(id, buffers)\n            _FS_OPERATIONS_CALLBACKS.set(id, callback)\n            i_fs_openSoundReadStream(id, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func$1('x_fs_onSoundStreamData', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('FloatArray[]', 'block'),\n          ], 'Int') `\n            _fs_assertOperationExists(id, 'x_fs_onSoundStreamData')\n            const buffers = _FS_SOUND_STREAM_BUFFERS.get(id)\n            for (${Var$1('Int', 'i', '0')}; i < buffers.length; i++) {\n                buf_pushBlock(buffers[i], block[i])\n            }\n            return buffers[0].pullAvailableLength\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onSoundStreamData',\n          },\n      ],\n      imports: [\n          Func$1('i_fs_openSoundReadStream', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_Url', 'url'),\n              Var$1('Message', 'info'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsSoundStreamCore$1, bufPushPull$1],\n  });\n  ({\n      codeGenerator: () => Sequence$1([\n          Func$1('fs_openSoundWriteStream', [\n              Var$1('fs_Url', 'url'),\n              Var$1('fs_SoundInfo', 'soundInfo'),\n              Var$1('fs_OperationCallback', 'callback'),\n          ], 'fs_OperationId') `\n            const id = _fs_createOperationId()\n            _FS_SOUND_STREAM_BUFFERS.set(id, [])\n            _FS_OPERATIONS_CALLBACKS.set(id, callback)\n            i_fs_openSoundWriteStream(id, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func$1('fs_sendSoundStreamData', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('FloatArray[]', 'block')\n          ], 'void') `\n            _fs_assertOperationExists(id, 'fs_sendSoundStreamData')\n            i_fs_sendSoundStreamData(id, block)\n        `\n      ]),\n      imports: [\n          Func$1('i_fs_openSoundWriteStream', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_Url', 'url'),\n              Var$1('Message', 'info'),\n          ], 'void') ``,\n          Func$1('i_fs_sendSoundStreamData', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('FloatArray[]', 'block'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsSoundStreamCore$1],\n  });\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  AnonFunc$1([Var$1('Message', 'm')], 'void') ``;\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  var readSoundFile = async (node, payload, settings) => {\n      if (payload.functionName === 'onReadSoundFile') {\n          const [operationId, url, [channelCount]] = payload.arguments;\n          const absoluteUrl = resolveRelativeUrl(settings.rootUrl, url);\n          let operationStatus = FS_OPERATION_SUCCESS$1;\n          let sound = null;\n          try {\n              sound = await fakeFs.readSound(absoluteUrl, node.context);\n          }\n          catch (err) {\n              operationStatus = FS_OPERATION_FAILURE$1;\n              console.error(err);\n          }\n          if (sound) {\n              sound = fixSoundChannelCount(sound, channelCount);\n          }\n          node.port.postMessage({\n              type: 'fs',\n              payload: {\n                  functionName: 'sendReadSoundFileResponse',\n                  arguments: [operationId, operationStatus, sound],\n              },\n          }, \n          // Add as transferables to avoid copies between threads\n          sound.map((array) => array.buffer));\n      }\n      else if (payload.functionName === 'sendReadSoundFileResponse_return') ;\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const BUFFER_HIGH = 10 * 44100;\n  const BUFFER_LOW = BUFFER_HIGH / 2;\n  var readSoundStream = async (node, payload, settings) => {\n      if (payload.functionName === 'onOpenSoundReadStream') {\n          const [operationId, url, [channelCount]] = payload.arguments;\n          try {\n              const absoluteUrl = resolveRelativeUrl(settings.rootUrl, url);\n              await fakeFs.readStreamSound(operationId, absoluteUrl, channelCount, node.context);\n          }\n          catch (err) {\n              console.error(err);\n              node.port.postMessage({\n                  type: 'fs',\n                  payload: {\n                      functionName: 'closeSoundStream',\n                      arguments: [operationId, FS_OPERATION_FAILURE$1],\n                  },\n              });\n              return;\n          }\n          streamLoop(node, operationId, 0);\n      }\n      else if (payload.functionName === 'sendSoundStreamData_return') {\n          const stream = getStream(payload.operationId);\n          if (!stream) {\n              throw new Error(`unknown stream ${payload.operationId}`);\n          }\n          streamLoop(node, payload.operationId, payload.returned);\n      }\n      else if (payload.functionName === 'closeSoundStream_return') {\n          const stream = getStream(payload.operationId);\n          if (stream) {\n              killStream(payload.operationId);\n          }\n      }\n  };\n  const streamLoop = (node, operationId, framesAvailableInEngine) => {\n      const sampleRate = node.context.sampleRate;\n      const secondsToThreshold = Math.max(framesAvailableInEngine - BUFFER_LOW, 10) / sampleRate;\n      const framesToSend = BUFFER_HIGH -\n          (framesAvailableInEngine - secondsToThreshold * sampleRate);\n      setTimeout(() => {\n          const stream = getStream(operationId);\n          if (!stream) {\n              console.log(`stream ${operationId} was maybe closed`);\n              return;\n          }\n          if (stream.readPosition < stream.frameCount) {\n              const block = pullBlock(stream, framesToSend);\n              node.port.postMessage({\n                  type: 'fs',\n                  payload: {\n                      functionName: 'sendSoundStreamData',\n                      arguments: [operationId, block],\n                  },\n              }, \n              // Add as transferables to avoid copies between threads\n              block.map((array) => array.buffer));\n          }\n          else {\n              node.port.postMessage({\n                  type: 'fs',\n                  payload: {\n                      functionName: 'closeSoundStream',\n                      arguments: [operationId, FS_OPERATION_SUCCESS$1],\n                  },\n              });\n          }\n      }, secondsToThreshold * 1000);\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  var writeSoundFile = async (node, payload, settings) => {\n      if (payload.functionName === 'onWriteSoundFile') {\n          const [operationId, sound, url, [channelCount]] = payload.arguments;\n          const fixedSound = fixSoundChannelCount(sound, channelCount);\n          const absoluteUrl = resolveRelativeUrl(settings.rootUrl, url);\n          await fakeFs.writeSound(fixedSound, absoluteUrl);\n          let operationStatus = FS_OPERATION_SUCCESS$1;\n          node.port.postMessage({\n              type: 'fs',\n              payload: {\n                  functionName: 'sendWriteSoundFileResponse',\n                  arguments: [operationId, operationStatus],\n              },\n          });\n      }\n      else if (payload.functionName === 'sendWriteSoundFileResponse_return') ;\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  var writeSoundStream = async (_, payload, settings) => {\n      if (payload.functionName === 'onOpenSoundWriteStream') {\n          const [operationId, url, [channelCount]] = payload.arguments;\n          const absoluteUrl = resolveRelativeUrl(settings.rootUrl, url);\n          await fakeFs.writeStreamSound(operationId, absoluteUrl, channelCount);\n      }\n      else if (payload.functionName === 'onSoundStreamData') {\n          const [operationId, sound] = payload.arguments;\n          const stream = getStream(operationId);\n          if (!stream) {\n              throw new Error(`unknown stream ${operationId}`);\n          }\n          pushBlock(stream, sound);\n      }\n      else if (payload.functionName === 'closeSoundStream_return') {\n          const stream = getStream(payload.operationId);\n          if (stream) {\n              killStream(payload.operationId);\n          }\n      }\n  };\n\n  var index = async (node, messageEvent, settings) => {\n      const message = messageEvent.data;\n      const { payload } = message;\n      if (message.type !== 'fs') {\n          throw new Error(`Unknown message type from node ${message.type}`);\n      }\n      if (payload.functionName === 'onReadSoundFile' ||\n          payload.functionName === 'sendReadSoundFileResponse_return') {\n          readSoundFile(node, payload, settings);\n      }\n      else if (payload.functionName === 'onOpenSoundReadStream' ||\n          payload.functionName === 'sendSoundStreamData_return') {\n          readSoundStream(node, payload, settings);\n      }\n      else if (payload.functionName === 'onWriteSoundFile' ||\n          payload.functionName === 'sendWriteSoundFileResponse_return') {\n          writeSoundFile(node, payload, settings);\n      }\n      else if (payload.functionName === 'onOpenSoundWriteStream' ||\n          payload.functionName === 'onSoundStreamData') {\n          writeSoundStream(node, payload, settings);\n      }\n      else if (payload.functionName === 'closeSoundStream_return') {\n          writeSoundStream(node, payload, settings);\n          readSoundStream(node, payload, settings);\n      }\n      else if (payload.functionName === 'onCloseSoundStream') {\n          closeSoundStream(node, payload);\n      }\n      else {\n          throw new Error(`Unknown callback ${payload.functionName}`);\n      }\n  };\n\n  var initialize = (...args) => {\n      return registerWebPdWorkletNode(...args);\n  };\n\n  const urlDirName = (url) => {\n      if (isExternalUrl(url)) {\n          return new URL('.', url).href;\n      }\n      else {\n          return new URL('.', new URL(url, document.URL).href).href;\n      }\n  };\n  const isExternalUrl = (urlString) => {\n      try {\n          const url = new URL(urlString);\n          if (url.origin !== new URL(document.URL, document.baseURI).origin) {\n              return true;\n          }\n      }\n      catch (_e) {\n          new URL(urlString, document.baseURI);\n      }\n      return false;\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  /** Generate an integer series from 0 to `count` (non-inclusive). */\n  const countTo = (count) => {\n      const results = [];\n      for (let i = 0; i < count; i++) {\n          results.push(i);\n      }\n      return results;\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const Var = (typeName, name, value) => _preventToString({\n      astType: 'Var',\n      name,\n      type: typeName,\n      value: _prepareVarValue(value),\n  });\n  const ConstVar = (typeName, name, value) => _preventToString({\n      astType: 'ConstVar',\n      name,\n      type: typeName,\n      value: _prepareVarValue(value),\n  });\n  const Func = (name, args = [], returnType = 'void') => (strings, ...content) => _preventToString({\n      astType: 'Func',\n      name,\n      args,\n      returnType,\n      body: ast(strings, ...content),\n  });\n  const AnonFunc = (args = [], returnType = 'void') => (strings, ...content) => _preventToString({\n      astType: 'Func',\n      name: null,\n      args,\n      returnType,\n      body: ast(strings, ...content),\n  });\n  const Class = (name, members) => _preventToString({\n      astType: 'Class',\n      name,\n      members,\n  });\n  const Sequence = (content) => ({\n      astType: 'Sequence',\n      content: _processRawContent(_intersperse(content, countTo(content.length - 1).map(() => '\\n'))),\n  });\n  const ast = (strings, ...content) => _preventToString({\n      astType: 'Sequence',\n      content: _processRawContent(_intersperse(strings, content)),\n  });\n  const _processRawContent = (content) => {\n      // 1. Flatten arrays and AstSequence, filter out nulls, and convert numbers to strings\n      // Basically converts input to an Array<AstContent>.\n      const flattenedAndFiltered = content.flatMap((element) => {\n          if (typeof element === 'string') {\n              return [element];\n          }\n          else if (typeof element === 'number') {\n              return [element.toString()];\n          }\n          else {\n              if (element === null) {\n                  return [];\n              }\n              else if (Array.isArray(element)) {\n                  return _processRawContent(_intersperse(element, countTo(element.length - 1).map(() => '\\n')));\n              }\n              else if (typeof element === 'object' &&\n                  element.astType === 'Sequence') {\n                  return element.content;\n              }\n              else {\n                  return [element];\n              }\n          }\n      });\n      // 2. Combine adjacent strings\n      const [combinedContent, remainingString] = flattenedAndFiltered.reduce(([combinedContent, currentString], element) => {\n          if (typeof element === 'string') {\n              return [combinedContent, currentString + element];\n          }\n          else {\n              if (currentString.length) {\n                  return [[...combinedContent, currentString, element], ''];\n              }\n              else {\n                  return [[...combinedContent, element], ''];\n              }\n          }\n      }, [[], '']);\n      if (remainingString.length) {\n          combinedContent.push(remainingString);\n      }\n      return combinedContent;\n  };\n  /**\n   * Intersperse content from array1 with content from array2.\n   * `array1.length` must be equal to `array2.length + 1`.\n   */\n  const _intersperse = (array1, array2) => {\n      if (array1.length === 0) {\n          return [];\n      }\n      return array1\n          .slice(1)\n          .reduce((combinedContent, element, i) => combinedContent.concat([array2[i], element]), [array1[0]]);\n  };\n  /**\n   * Prevents AST elements from being rendered as a string, as this is\n   * most likely an error due to unproper use of `ast`.\n   * Deacivated. Activate for debugging by uncommenting the line below.\n   */\n  const _preventToString = (element) => ({\n      ...element,\n      // Uncomment this to activate\n      // toString: () => { throw new Error(`Rendering element ${elemennt.astType} as string is probably an error`) }\n  });\n  const _prepareVarValue = (value) => {\n      if (typeof value === 'number') {\n          return Sequence([value.toString()]);\n      }\n      else if (typeof value === 'string') {\n          return Sequence([value]);\n      }\n      else {\n          return value;\n      }\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const bufCore = () => Sequence([\n      /**\n       * Ring buffer\n       */\n      Class('buf_SoundBuffer', [\n          Var('FloatArray', 'data'),\n          Var('Int', 'length'),\n          Var('Int', 'writeCursor'),\n          Var('Int', 'pullAvailableLength'),\n      ]),\n      /** Erases all the content from the buffer */\n      Func('buf_clear', [\n          Var('buf_SoundBuffer', 'buffer')\n      ], 'void') `\n        buffer.data.fill(0)\n    `,\n      /** Erases all the content from the buffer */\n      Func('buf_create', [\n          Var('Int', 'length')\n      ], 'buf_SoundBuffer') `\n        return {\n            data: createFloatArray(length),\n            length: length,\n            writeCursor: 0,\n            pullAvailableLength: 0,\n        }\n    `\n  ]);\n  const bufPushPull = {\n      codeGenerator: () => Sequence([\n          /**\n           * Pushes a block to the buffer, throwing an error if the buffer is full.\n           * If the block is written successfully, {@link buf_SoundBuffer#writeCursor}\n           * is moved corresponding with the length of data written.\n           *\n           * @todo : Optimize by allowing to read/write directly from host\n           */\n          Func('buf_pushBlock', [\n              Var('buf_SoundBuffer', 'buffer'),\n              Var('FloatArray', 'block')\n          ], 'Int') `\n            if (buffer.pullAvailableLength + block.length > buffer.length) {\n                throw new Error('buffer full')\n            }\n\n            ${Var('Int', 'left', 'block.length')}\n            while (left > 0) {\n                ${ConstVar('Int', 'lengthToWrite', `toInt(Math.min(\n                    toFloat(buffer.length - buffer.writeCursor), \n                    toFloat(left),\n                ))`)}\n                buffer.data.set(\n                    block.subarray(\n                        block.length - left, \n                        block.length - left + lengthToWrite\n                    ), \n                    buffer.writeCursor\n                )\n                left -= lengthToWrite\n                buffer.writeCursor = (buffer.writeCursor + lengthToWrite) % buffer.length\n                buffer.pullAvailableLength += lengthToWrite\n            }\n            return buffer.pullAvailableLength\n        `,\n          /**\n           * Pulls a single sample from the buffer.\n           * This is a destructive operation, and the sample will be\n           * unavailable for subsequent readers with the same operation.\n           */\n          Func('buf_pullSample', [\n              Var('buf_SoundBuffer', 'buffer')\n          ], 'Float') `\n            if (buffer.pullAvailableLength <= 0) {\n                return 0\n            }\n            ${ConstVar('Int', 'readCursor', 'buffer.writeCursor - buffer.pullAvailableLength')}\n            buffer.pullAvailableLength -= 1\n            return buffer.data[readCursor >= 0 ? readCursor : buffer.length + readCursor]\n        `\n      ]),\n      dependencies: [bufCore],\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const msg = {\n      codeGenerator: ({ target }) => {\n          const declareFuncs = {\n              msg_create: Func('msg_create', [Var('MessageTemplate', 'template')], 'Message'),\n              msg_writeStringToken: Func('msg_writeStringToken', [\n                  Var('Message', 'message'),\n                  Var('Int', 'tokenIndex'),\n                  Var('string', 'value'),\n              ], 'void'),\n              msg_writeFloatToken: Func('msg_writeFloatToken', [\n                  Var('Message', 'message'),\n                  Var('Int', 'tokenIndex'),\n                  Var('MessageFloatToken', 'value'),\n              ], 'void'),\n              msg_readStringToken: Func('msg_readStringToken', [\n                  Var('Message', 'message'),\n                  Var('Int', 'tokenIndex'),\n              ], 'string'),\n              msg_readFloatToken: Func('msg_readFloatToken', [\n                  Var('Message', 'message'),\n                  Var('Int', 'tokenIndex'),\n              ], 'MessageFloatToken'),\n              msg_getLength: Func('msg_getLength', [\n                  Var('Message', 'message')\n              ], 'Int'),\n              msg_getTokenType: Func('msg_getTokenType', [\n                  Var('Message', 'message'),\n                  Var('Int', 'tokenIndex'),\n              ], 'Int'),\n              msg_isStringToken: Func('msg_isStringToken', [\n                  Var('Message', 'message'),\n                  Var('Int', 'tokenIndex'),\n              ], 'boolean'),\n              msg_isFloatToken: Func('msg_isFloatToken', [\n                  Var('Message', 'message'),\n                  Var('Int', 'tokenIndex'),\n              ], 'boolean'),\n              msg_isMatching: Func('msg_isMatching', [\n                  Var('Message', 'message'),\n                  Var('Array<MessageHeaderEntry>', 'tokenTypes'),\n              ], 'boolean'),\n              msg_floats: Func('msg_floats', [\n                  Var('Array<Float>', 'values'),\n              ], 'Message'),\n              msg_strings: Func('msg_strings', [\n                  Var('Array<string>', 'values'),\n              ], 'Message'),\n              msg_display: Func('msg_display', [\n                  Var('Message', 'message'),\n              ], 'string')\n          };\n          if (target === 'assemblyscript') {\n              return Sequence([\n                  `\n                type MessageFloatToken = Float\n                type MessageCharToken = Int\n\n                type MessageTemplate = Array<Int>\n                type MessageHeaderEntry = Int\n                type MessageHeader = Int32Array\n                `,\n                  ConstVar('MessageHeaderEntry', 'MSG_FLOAT_TOKEN', '0'),\n                  ConstVar('MessageHeaderEntry', 'MSG_STRING_TOKEN', '1'),\n                  // =========================== EXPORTED API\n                  Func('x_msg_create', [\n                      Var('Int32Array', 'templateTypedArray')\n                  ], 'Message') `\n                    const template: MessageTemplate = new Array<Int>(templateTypedArray.length)\n                    for (let i: Int = 0; i < templateTypedArray.length; i++) {\n                        template[i] = templateTypedArray[i]\n                    }\n                    return msg_create(template)\n                `,\n                  Func('x_msg_getTokenTypes', [\n                      Var('Message', 'message')\n                  ], 'MessageHeader') `\n                    return message.tokenTypes\n                `,\n                  Func('x_msg_createTemplate', [\n                      Var('i32', 'length')\n                  ], 'Int32Array') `\n                    return new Int32Array(length)\n                `,\n                  // =========================== MSG API\n                  declareFuncs.msg_create `\n                    let i: Int = 0\n                    let byteCount: Int = 0\n                    let tokenTypes: Array<MessageHeaderEntry> = []\n                    let tokenPositions: Array<MessageHeaderEntry> = []\n\n                    i = 0\n                    while (i < template.length) {\n                        switch(template[i]) {\n                            case MSG_FLOAT_TOKEN:\n                                byteCount += sizeof<MessageFloatToken>()\n                                tokenTypes.push(MSG_FLOAT_TOKEN)\n                                tokenPositions.push(byteCount)\n                                i += 1\n                                break\n                            case MSG_STRING_TOKEN:\n                                byteCount += sizeof<MessageCharToken>() * template[i + 1]\n                                tokenTypes.push(MSG_STRING_TOKEN)\n                                tokenPositions.push(byteCount)\n                                i += 2\n                                break\n                            default:\n                                throw new Error(\"unknown token type : \" + template[i].toString())\n                        }\n                    }\n\n                    const tokenCount = tokenTypes.length\n                    const headerByteCount = _msg_computeHeaderLength(tokenCount) * sizeof<MessageHeaderEntry>()\n                    byteCount += headerByteCount\n\n                    const buffer = new ArrayBuffer(byteCount)\n                    const dataView = new DataView(buffer)\n                    let writePosition: Int = 0\n                    \n                    dataView.setInt32(writePosition, tokenCount)\n                    writePosition += sizeof<MessageHeaderEntry>()\n\n                    for (i = 0; i < tokenCount; i++) {\n                        dataView.setInt32(writePosition, tokenTypes[i])\n                        writePosition += sizeof<MessageHeaderEntry>()\n                    }\n\n                    dataView.setInt32(writePosition, headerByteCount)\n                    writePosition += sizeof<MessageHeaderEntry>()\n                    for (i = 0; i < tokenCount; i++) {\n                        dataView.setInt32(writePosition, headerByteCount + tokenPositions[i])\n                        writePosition += sizeof<MessageHeaderEntry>()\n                    }\n\n                    const header = _msg_unpackHeader(dataView, tokenCount)\n                    return {\n                        dataView,\n                        tokenCount,\n                        header,\n                        tokenTypes: _msg_unpackTokenTypes(header),\n                        tokenPositions: _msg_unpackTokenPositions(header),\n                    }\n                `,\n                  declareFuncs.msg_writeStringToken `\n                    const startPosition = message.tokenPositions[tokenIndex]\n                    const endPosition = message.tokenPositions[tokenIndex + 1]\n                    const expectedStringLength: Int = (endPosition - startPosition) / sizeof<MessageCharToken>()\n                    if (value.length !== expectedStringLength) {\n                        throw new Error('Invalid string size, specified ' + expectedStringLength.toString() + ', received ' + value.length.toString())\n                    }\n\n                    for (let i = 0; i < value.length; i++) {\n                        message.dataView.setInt32(\n                            startPosition + i * sizeof<MessageCharToken>(), \n                            value.codePointAt(i)\n                        )\n                    }\n                `,\n                  declareFuncs.msg_writeFloatToken `\n                    setFloatDataView(message.dataView, message.tokenPositions[tokenIndex], value)\n                `,\n                  declareFuncs.msg_readStringToken `\n                    const startPosition = message.tokenPositions[tokenIndex]\n                    const endPosition = message.tokenPositions[tokenIndex + 1]\n                    const stringLength: Int = (endPosition - startPosition) / sizeof<MessageCharToken>()\n                    let value: string = ''\n                    for (let i = 0; i < stringLength; i++) {\n                        value += String.fromCodePoint(message.dataView.getInt32(startPosition + sizeof<MessageCharToken>() * i))\n                    }\n                    return value\n                `,\n                  declareFuncs.msg_readFloatToken `\n                    return getFloatDataView(message.dataView, message.tokenPositions[tokenIndex])\n                `,\n                  declareFuncs.msg_getLength `\n                    return message.tokenTypes.length\n                `,\n                  declareFuncs.msg_getTokenType `\n                    return message.tokenTypes[tokenIndex]\n                `,\n                  declareFuncs.msg_isStringToken `\n                    return msg_getTokenType(message, tokenIndex) === MSG_STRING_TOKEN\n                `,\n                  declareFuncs.msg_isFloatToken `\n                    return msg_getTokenType(message, tokenIndex) === MSG_FLOAT_TOKEN\n                `,\n                  declareFuncs.msg_isMatching `\n                    if (message.tokenTypes.length !== tokenTypes.length) {\n                        return false\n                    }\n                    for (let i: Int = 0; i < tokenTypes.length; i++) {\n                        if (message.tokenTypes[i] !== tokenTypes[i]) {\n                            return false\n                        }\n                    }\n                    return true\n                `,\n                  declareFuncs.msg_floats `\n                    const message: Message = msg_create(values.map<MessageHeaderEntry>(v => MSG_FLOAT_TOKEN))\n                    for (let i: Int = 0; i < values.length; i++) {\n                        msg_writeFloatToken(message, i, values[i])\n                    }\n                    return message\n                `,\n                  declareFuncs.msg_strings `\n                    const template: MessageTemplate = []\n                    for (let i: Int = 0; i < values.length; i++) {\n                        template.push(MSG_STRING_TOKEN)\n                        template.push(values[i].length)\n                    }\n                    const message: Message = msg_create(template)\n                    for (let i: Int = 0; i < values.length; i++) {\n                        msg_writeStringToken(message, i, values[i])\n                    }\n                    return message\n                `,\n                  declareFuncs.msg_display `\n                    let displayArray: Array<string> = []\n                    for (let i: Int = 0; i < msg_getLength(message); i++) {\n                        if (msg_isFloatToken(message, i)) {\n                            displayArray.push(msg_readFloatToken(message, i).toString())\n                        } else {\n                            displayArray.push('\"' + msg_readStringToken(message, i) + '\"')\n                        }\n                    }\n                    return '[' + displayArray.join(', ') + ']'\n                `,\n                  // =========================== PRIVATE\n                  // Message header : [\n                  //      <Token count>, \n                  //      <Token 1 type>,  ..., <Token N type>, \n                  //      <Token 1 start>, ..., <Token N start>, <Token N end>\n                  //      ... DATA ...\n                  // ]\n                  Class('Message', [\n                      Var('DataView', 'dataView'),\n                      Var('MessageHeader', 'header'),\n                      Var('MessageHeaderEntry', 'tokenCount'),\n                      Var('MessageHeader', 'tokenTypes'),\n                      Var('MessageHeader', 'tokenPositions'),\n                  ]),\n                  Func('_msg_computeHeaderLength', [\n                      Var('Int', 'tokenCount')\n                  ], 'Int') `\n                    return 1 + tokenCount * 2 + 1\n                `,\n                  Func('_msg_unpackTokenCount', [\n                      Var('DataView', 'messageDataView')\n                  ], 'MessageHeaderEntry') `\n                    return messageDataView.getInt32(0)\n                `,\n                  Func('_msg_unpackHeader', [\n                      Var('DataView', 'messageDataView'),\n                      Var('MessageHeaderEntry', 'tokenCount'),\n                  ], 'MessageHeader') `\n                    const headerLength = _msg_computeHeaderLength(tokenCount)\n                    // TODO : why is this \\`wrap\\` not working ?\n                    // return Int32Array.wrap(messageDataView.buffer, 0, headerLength)\n                    const messageHeader = new Int32Array(headerLength)\n                    for (let i = 0; i < headerLength; i++) {\n                        messageHeader[i] = messageDataView.getInt32(sizeof<MessageHeaderEntry>() * i)\n                    }\n                    return messageHeader\n                `,\n                  Func('_msg_unpackTokenTypes', [\n                      Var('MessageHeader', 'header'),\n                  ], 'MessageHeader') `\n                    return header.slice(1, 1 + header[0])\n                `,\n                  Func('_msg_unpackTokenPositions', [\n                      Var('MessageHeader', 'header'),\n                  ], 'MessageHeader') `\n                    return header.slice(1 + header[0])\n                `,\n              ]);\n          }\n          else if (target === 'javascript') {\n              return Sequence([\n                  ConstVar('string', 'MSG_FLOAT_TOKEN', '\"number\"'),\n                  ConstVar('string', 'MSG_STRING_TOKEN', '\"string\"'),\n                  declareFuncs.msg_create `\n                    const m = []\n                    let i = 0\n                    while (i < template.length) {\n                        if (template[i] === MSG_STRING_TOKEN) {\n                            m.push('')\n                            i += 2\n                        } else if (template[i] === MSG_FLOAT_TOKEN) {\n                            m.push(0)\n                            i += 1\n                        }\n                    }\n                    return m\n                `,\n                  declareFuncs.msg_getLength `\n                    return message.length\n                `,\n                  declareFuncs.msg_getTokenType `\n                    return typeof message[tokenIndex]\n                `,\n                  declareFuncs.msg_isStringToken `\n                    return msg_getTokenType(message, tokenIndex) === 'string'\n                `,\n                  declareFuncs.msg_isFloatToken `\n                    return msg_getTokenType(message, tokenIndex) === 'number'\n                `,\n                  declareFuncs.msg_isMatching `\n                    return (message.length === tokenTypes.length) \n                        && message.every((v, i) => msg_getTokenType(message, i) === tokenTypes[i])\n                `,\n                  declareFuncs.msg_writeFloatToken `\n                    message[tokenIndex] = value\n                `,\n                  declareFuncs.msg_writeStringToken `\n                    message[tokenIndex] = value\n                `,\n                  declareFuncs.msg_readFloatToken `\n                    return message[tokenIndex]\n                `,\n                  declareFuncs.msg_readStringToken `\n                    return message[tokenIndex]\n                `,\n                  declareFuncs.msg_floats `\n                    return values\n                `,\n                  declareFuncs.msg_strings `\n                    return values\n                `,\n                  declareFuncs.msg_display `\n                    return '[' + message\n                        .map(t => typeof t === 'string' ? '\"' + t + '\"' : t.toString())\n                        .join(', ') + ']'\n                `,\n              ]);\n          }\n          else {\n              throw new Error(`Unexpected target: ${target}`);\n          }\n      },\n      exports: [\n          { name: 'x_msg_create', targets: ['assemblyscript'] },\n          { name: 'x_msg_getTokenTypes', targets: ['assemblyscript'] },\n          { name: 'x_msg_createTemplate', targets: ['assemblyscript'] },\n          { name: 'msg_writeStringToken', targets: ['assemblyscript'] },\n          { name: 'msg_writeFloatToken', targets: ['assemblyscript'] },\n          { name: 'msg_readStringToken', targets: ['assemblyscript'] },\n          { name: 'msg_readFloatToken', targets: ['assemblyscript'] },\n          { name: 'MSG_FLOAT_TOKEN', targets: ['assemblyscript'] },\n          { name: 'MSG_STRING_TOKEN', targets: ['assemblyscript'] },\n      ],\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const FS_OPERATION_SUCCESS = 0;\n  const FS_OPERATION_FAILURE = 1;\n  const fsCore = {\n      codeGenerator: ({ target }) => {\n          const content = [];\n          if (target === 'assemblyscript') {\n              content.push(`\n                type fs_OperationId = Int\n                type fs_OperationStatus = Int\n                type fs_OperationCallback = (id: fs_OperationId, status: fs_OperationStatus) => void\n                type fs_OperationSoundCallback = (id: fs_OperationId, status: fs_OperationStatus, sound: FloatArray[]) => void\n                type fs_Url = string\n            `);\n          }\n          return Sequence([\n              ...content,\n              ConstVar('Int', 'FS_OPERATION_SUCCESS', FS_OPERATION_SUCCESS.toString()),\n              ConstVar('Int', 'FS_OPERATION_FAILURE', FS_OPERATION_FAILURE.toString()),\n              ConstVar('Set<fs_OperationId>', '_FS_OPERATIONS_IDS', 'new Set()'),\n              ConstVar('Map<fs_OperationId, fs_OperationCallback>', '_FS_OPERATIONS_CALLBACKS', 'new Map()'),\n              ConstVar('Map<fs_OperationId, fs_OperationSoundCallback>', '_FS_OPERATIONS_SOUND_CALLBACKS', 'new Map()'),\n              // We start at 1, because 0 is what ASC uses when host forgets to pass an arg to \n              // a function. Therefore we can get false negatives when a test happens to expect a 0.\n              Var('Int', '_FS_OPERATION_COUNTER', '1'),\n              Class('fs_SoundInfo', [\n                  Var('Int', 'channelCount'),\n                  Var('Int', 'sampleRate'),\n                  Var('Int', 'bitDepth'),\n                  Var('string', 'encodingFormat'),\n                  Var('string', 'endianness'),\n                  Var('string', 'extraOptions'),\n              ]),\n              Func('fs_soundInfoToMessage', [\n                  Var('fs_SoundInfo', 'soundInfo')\n              ], 'Message') `\n                ${ConstVar('Message', 'info', `msg_create([\n                    MSG_FLOAT_TOKEN,\n                    MSG_FLOAT_TOKEN,\n                    MSG_FLOAT_TOKEN,\n                    MSG_STRING_TOKEN,\n                    soundInfo.encodingFormat.length,\n                    MSG_STRING_TOKEN,\n                    soundInfo.endianness.length,\n                    MSG_STRING_TOKEN,\n                    soundInfo.extraOptions.length\n                ])`)}\n                msg_writeFloatToken(info, 0, toFloat(soundInfo.channelCount))\n                msg_writeFloatToken(info, 1, toFloat(soundInfo.sampleRate))\n                msg_writeFloatToken(info, 2, toFloat(soundInfo.bitDepth))\n                msg_writeStringToken(info, 3, soundInfo.encodingFormat)\n                msg_writeStringToken(info, 4, soundInfo.endianness)\n                msg_writeStringToken(info, 5, soundInfo.extraOptions)\n                return info\n            `,\n              Func('_fs_assertOperationExists', [\n                  Var('fs_OperationId', 'id'),\n                  Var('string', 'operationName'),\n              ], 'void') `\n                if (!_FS_OPERATIONS_IDS.has(id)) {\n                    throw new Error(operationName + ' operation unknown : ' + id.toString())\n                }\n            `,\n              Func('_fs_createOperationId', [], 'fs_OperationId') `\n                ${ConstVar('fs_OperationId', 'id', '_FS_OPERATION_COUNTER++')}\n                _FS_OPERATIONS_IDS.add(id)\n                return id\n            `\n          ]);\n      },\n      dependencies: [msg],\n  };\n  ({\n      codeGenerator: () => Sequence([\n          Func('fs_readSoundFile', [\n              Var('fs_Url', 'url'),\n              Var('fs_SoundInfo', 'soundInfo'),\n              Var('fs_OperationSoundCallback', 'callback'),\n          ], 'fs_OperationId') `\n            ${ConstVar('fs_OperationId', 'id', '_fs_createOperationId()')}\n            _FS_OPERATIONS_SOUND_CALLBACKS.set(id, callback)\n            i_fs_readSoundFile(id, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func('x_fs_onReadSoundFileResponse', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_OperationStatus', 'status'),\n              Var('FloatArray[]', 'sound'),\n          ], 'void') `\n            _fs_assertOperationExists(id, 'x_fs_onReadSoundFileResponse')\n            _FS_OPERATIONS_IDS.delete(id)\n            // Finish cleaning before calling the callback in case it would throw an error.\n            const callback = _FS_OPERATIONS_SOUND_CALLBACKS.get(id)\n            callback(id, status, sound)\n            _FS_OPERATIONS_SOUND_CALLBACKS.delete(id)\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onReadSoundFileResponse',\n          },\n      ],\n      imports: [\n          Func('i_fs_readSoundFile', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_Url', 'url'),\n              Var('Message', 'info'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsCore],\n  });\n  ({\n      codeGenerator: () => Sequence([\n          Func('fs_writeSoundFile', [\n              Var('FloatArray[]', 'sound'),\n              Var('fs_Url', 'url'),\n              Var('fs_SoundInfo', 'soundInfo'),\n              Var('fs_OperationCallback', 'callback'),\n          ], 'fs_OperationId') `\n            ${ConstVar('fs_OperationId', 'id', '_fs_createOperationId()')}\n            _FS_OPERATIONS_CALLBACKS.set(id, callback)\n            i_fs_writeSoundFile(id, sound, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func('x_fs_onWriteSoundFileResponse', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_OperationStatus', 'status'),\n          ], 'void') `\n            _fs_assertOperationExists(id, 'x_fs_onWriteSoundFileResponse')\n            _FS_OPERATIONS_IDS.delete(id)\n            // Finish cleaning before calling the callback in case it would throw an error.\n            ${ConstVar('fs_OperationCallback', 'callback', '_FS_OPERATIONS_CALLBACKS.get(id)')}\n            callback(id, status)\n            _FS_OPERATIONS_CALLBACKS.delete(id)\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onWriteSoundFileResponse',\n          },\n      ],\n      imports: [\n          Func('i_fs_writeSoundFile', [\n              Var('fs_OperationId', 'id'),\n              Var('FloatArray[]', 'sound'),\n              Var('fs_Url', 'url'),\n              Var('Message', 'info'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsCore],\n  });\n  const fsSoundStreamCore = {\n      codeGenerator: () => Sequence([\n          ConstVar('Map<fs_OperationId, Array<buf_SoundBuffer>>', '_FS_SOUND_STREAM_BUFFERS', 'new Map()'),\n          ConstVar('Int', '_FS_SOUND_BUFFER_LENGTH', '20 * 44100'),\n          Func('fs_closeSoundStream', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_OperationStatus', 'status'),\n          ], 'void') `\n            if (!_FS_OPERATIONS_IDS.has(id)) {\n                return\n            }\n            _FS_OPERATIONS_IDS.delete(id)\n            _FS_OPERATIONS_CALLBACKS.get(id)(id, status)\n            _FS_OPERATIONS_CALLBACKS.delete(id)\n            // Delete this last, to give the callback \n            // a chance to save a reference to the buffer\n            // If write stream, there won't be a buffer\n            if (_FS_SOUND_STREAM_BUFFERS.has(id)) {\n                _FS_SOUND_STREAM_BUFFERS.delete(id)\n            }\n            i_fs_closeSoundStream(id, status)\n        `,\n          Func('x_fs_onCloseSoundStream', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_OperationStatus', 'status'),\n          ], 'void') `\n            fs_closeSoundStream(id, status)\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onCloseSoundStream',\n          },\n      ],\n      imports: [\n          Func('i_fs_closeSoundStream', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_OperationStatus', 'status'),\n          ], 'void') ``,\n      ],\n      dependencies: [bufCore, fsCore],\n  };\n  ({\n      codeGenerator: () => Sequence([\n          Func('fs_openSoundReadStream', [\n              Var('fs_Url', 'url'),\n              Var('fs_SoundInfo', 'soundInfo'),\n              Var('fs_OperationCallback', 'callback'),\n          ], 'fs_OperationId') `\n            ${ConstVar('fs_OperationId', 'id', '_fs_createOperationId()')}\n            ${ConstVar('Array<buf_SoundBuffer>', 'buffers', '[]')}\n            for (${Var('Int', 'channel', '0')}; channel < soundInfo.channelCount; channel++) {\n                buffers.push(buf_create(_FS_SOUND_BUFFER_LENGTH))\n            }\n            _FS_SOUND_STREAM_BUFFERS.set(id, buffers)\n            _FS_OPERATIONS_CALLBACKS.set(id, callback)\n            i_fs_openSoundReadStream(id, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func('x_fs_onSoundStreamData', [\n              Var('fs_OperationId', 'id'),\n              Var('FloatArray[]', 'block'),\n          ], 'Int') `\n            _fs_assertOperationExists(id, 'x_fs_onSoundStreamData')\n            const buffers = _FS_SOUND_STREAM_BUFFERS.get(id)\n            for (${Var('Int', 'i', '0')}; i < buffers.length; i++) {\n                buf_pushBlock(buffers[i], block[i])\n            }\n            return buffers[0].pullAvailableLength\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onSoundStreamData',\n          },\n      ],\n      imports: [\n          Func('i_fs_openSoundReadStream', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_Url', 'url'),\n              Var('Message', 'info'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsSoundStreamCore, bufPushPull],\n  });\n  ({\n      codeGenerator: () => Sequence([\n          Func('fs_openSoundWriteStream', [\n              Var('fs_Url', 'url'),\n              Var('fs_SoundInfo', 'soundInfo'),\n              Var('fs_OperationCallback', 'callback'),\n          ], 'fs_OperationId') `\n            const id = _fs_createOperationId()\n            _FS_SOUND_STREAM_BUFFERS.set(id, [])\n            _FS_OPERATIONS_CALLBACKS.set(id, callback)\n            i_fs_openSoundWriteStream(id, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func('fs_sendSoundStreamData', [\n              Var('fs_OperationId', 'id'),\n              Var('FloatArray[]', 'block')\n          ], 'void') `\n            _fs_assertOperationExists(id, 'fs_sendSoundStreamData')\n            i_fs_sendSoundStreamData(id, block)\n        `\n      ]),\n      imports: [\n          Func('i_fs_openSoundWriteStream', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_Url', 'url'),\n              Var('Message', 'info'),\n          ], 'void') ``,\n          Func('i_fs_sendSoundStreamData', [\n              Var('fs_OperationId', 'id'),\n              Var('FloatArray[]', 'block'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsSoundStreamCore],\n  });\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  AnonFunc([Var('Message', 'm')], 'void') ``;\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  // NOTE : not necessarily the most logical place to put this function, but we need it here\n  // cause it's imported by the bindings.\n  const getFloatArrayType = (bitDepth) => bitDepth === 64 ? Float64Array : Float32Array;\n  /** Helper to create a Module by wrapping a RawModule with Bindings */\n  const createModule = (rawModule, bindings) => \n  // Use empty object on proxy cause proxy cannot redefine access of member of its target,\n  // which causes issues for example for WebAssembly exports.\n  // See : https://stackoverflow.com/questions/75148897/get-on-proxy-property-items-is-a-read-only-and-non-configurable-data-proper\n  new Proxy({}, {\n      get: (_, k) => {\n          if (bindings.hasOwnProperty(k)) {\n              const key = String(k);\n              const bindingSpec = bindings[key];\n              switch (bindingSpec.type) {\n                  case 'raw':\n                      // Cannot use hasOwnProperty here cause not defined in wasm exports object\n                      if (k in rawModule) {\n                          return rawModule[key];\n                      }\n                      else {\n                          throw new Error(`Key ${String(key)} doesn't exist in raw module`);\n                      }\n                  case 'proxy':\n                  case 'callback':\n                      return bindingSpec.value;\n              }\n              // We need to return undefined here for compatibility with various APIs\n              // which inspect object's attributes.\n          }\n          else {\n              return undefined;\n          }\n      },\n      set: (_, k, newValue) => {\n          if (bindings.hasOwnProperty(String(k))) {\n              const key = String(k);\n              const bindingSpec = bindings[key];\n              if (bindingSpec.type === 'callback') {\n                  bindingSpec.value = newValue;\n              }\n              else {\n                  throw new Error(`Binding key ${String(key)} is read-only`);\n              }\n          }\n          else {\n              throw new Error(`Key ${String(k)} is not defined in bindings`);\n          }\n          return true;\n      },\n  });\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  /** @copyright Assemblyscript ESM bindings */\n  const liftString = (wasmExports, pointer) => {\n      if (!pointer)\n          return null;\n      pointer = pointer >>> 0;\n      const end = (pointer +\n          new Uint32Array(wasmExports.memory.buffer)[(pointer - 4) >>> 2]) >>>\n          1;\n      const memoryU16 = new Uint16Array(wasmExports.memory.buffer);\n      let start = pointer >>> 1;\n      let string = '';\n      while (end - start > 1024) {\n          string += String.fromCharCode(...memoryU16.subarray(start, (start += 1024)));\n      }\n      return string + String.fromCharCode(...memoryU16.subarray(start, end));\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  // REF : Assemblyscript ESM bindings\n  const instantiateWasmModule = async (wasmBuffer, wasmImports = {}) => {\n      const instanceAndModule = await WebAssembly.instantiate(wasmBuffer, {\n          env: {\n              abort: (messagePointer, \n              // filename, not useful because we compile everything to a single string\n              _, lineNumber, columnNumber) => {\n                  const message = liftString(wasmExports, messagePointer);\n                  lineNumber = lineNumber;\n                  columnNumber = columnNumber;\n                  (() => {\n                      // @external.js\n                      throw Error(`${message} at ${lineNumber}:${columnNumber}`);\n                  })();\n              },\n              seed: () => {\n                  return (() => {\n                      return Date.now() * Math.random();\n                  })();\n              },\n              'console.log': (textPointer) => {\n                  console.log(liftString(wasmExports, textPointer));\n              },\n          },\n          ...wasmImports,\n      });\n      const wasmExports = instanceAndModule.instance\n          .exports;\n      return instanceAndModule.instance;\n  };\n\n  const readMetadata$2 = async (wasmBuffer) => {\n      // In order to read metadata, we need to introspect the module to get the imports\n      const inputImports = {};\n      const wasmModule = WebAssembly.Module.imports(new WebAssembly.Module(wasmBuffer));\n      // Then we generate dummy functions to be able to instantiate the module\n      wasmModule\n          .filter((imprt) => imprt.module === 'input' && imprt.kind === 'function')\n          .forEach((imprt) => (inputImports[imprt.name] = () => undefined));\n      const wasmInstance = await instantiateWasmModule(wasmBuffer, {\n          input: inputImports,\n      });\n      // Finally, once the module instantiated, we read the metadata\n      const wasmExports = wasmInstance.exports;\n      const stringPointer = wasmExports.metadata.valueOf();\n      const metadataJSON = liftString(wasmExports, stringPointer);\n      return JSON.parse(metadataJSON);\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const createRawModule = (code) => new Function(`\n        ${code}\n        return exports\n    `)();\n  const createBindings = (rawModule) => ({\n      fs: { type: 'proxy', value: createFsModule(rawModule) },\n      metadata: { type: 'raw' },\n      configure: { type: 'raw' },\n      loop: { type: 'raw' },\n      io: { type: 'raw' },\n      commons: {\n          type: 'proxy',\n          value: createCommonsModule(rawModule, rawModule.metadata.audioSettings.bitDepth),\n      },\n  });\n  const createEngine = (code) => {\n      const rawModule = createRawModule(code);\n      return createModule(rawModule, createBindings(rawModule));\n  };\n  const createFsModule = (rawModule) => {\n      const fs = createModule(rawModule, {\n          onReadSoundFile: { type: 'callback', value: () => undefined },\n          onWriteSoundFile: { type: 'callback', value: () => undefined },\n          onOpenSoundReadStream: { type: 'callback', value: () => undefined },\n          onOpenSoundWriteStream: { type: 'callback', value: () => undefined },\n          onSoundStreamData: { type: 'callback', value: () => undefined },\n          onCloseSoundStream: { type: 'callback', value: () => undefined },\n          sendReadSoundFileResponse: {\n              type: 'proxy',\n              value: rawModule.x_fs_onReadSoundFileResponse,\n          },\n          sendWriteSoundFileResponse: {\n              type: 'proxy',\n              value: rawModule.x_fs_onWriteSoundFileResponse,\n          },\n          sendSoundStreamData: {\n              type: 'proxy',\n              value: rawModule.x_fs_onSoundStreamData,\n          },\n          closeSoundStream: {\n              type: 'proxy',\n              value: rawModule.x_fs_onCloseSoundStream,\n          },\n      });\n      rawModule.i_fs_openSoundWriteStream = (...args) => fs.onOpenSoundWriteStream(...args);\n      rawModule.i_fs_sendSoundStreamData = (...args) => fs.onSoundStreamData(...args);\n      rawModule.i_fs_openSoundReadStream = (...args) => fs.onOpenSoundReadStream(...args);\n      rawModule.i_fs_closeSoundStream = (...args) => fs.onCloseSoundStream(...args);\n      rawModule.i_fs_writeSoundFile = (...args) => fs.onWriteSoundFile(...args);\n      rawModule.i_fs_readSoundFile = (...args) => fs.onReadSoundFile(...args);\n      return fs;\n  };\n  const createCommonsModule = (rawModule, bitDepth) => {\n      const floatArrayType = getFloatArrayType(bitDepth);\n      return createModule(rawModule, {\n          getArray: { type: 'proxy', value: rawModule.commons_getArray },\n          setArray: {\n              type: 'proxy',\n              value: (arrayName, array) => rawModule.commons_setArray(arrayName, new floatArrayType(array)),\n          },\n      });\n  };\n\n  const readMetadata$1 = async (target, compiled) => {\n      switch (target) {\n          case 'assemblyscript':\n              return readMetadata$2(compiled);\n          case 'javascript':\n              return createEngine(compiled).metadata;\n      }\n  };\n\n  const createDefaultSettings = (patchUrl) => {\n      const rootUrl = urlDirName(patchUrl);\n      return {\n          messageHandler: (node, message) => index(node, message, { rootUrl }),\n      };\n  };\n  const readMetadata = (compiledPatch) => {\n      if (typeof compiledPatch === 'string') {\n          return readMetadata$1('javascript', compiledPatch);\n      }\n      else {\n          return readMetadata$1('assemblyscript', compiledPatch);\n      }\n  };\n\n  var run = async (audioContext, compiledPatch, settings) => {\n      const { messageHandler } = settings;\n      const webpdNode = new WebPdWorkletNode(audioContext);\n      webpdNode.port.onmessage = (msg) => messageHandler(webpdNode, msg);\n      if (typeof compiledPatch === 'string') {\n          webpdNode.port.postMessage({\n              type: 'code:JS',\n              payload: {\n                  jsCode: compiledPatch,\n              },\n          });\n      }\n      else {\n          webpdNode.port.postMessage({\n              type: 'code:WASM',\n              payload: {\n                  wasmBuffer: compiledPatch,\n              },\n          });\n      }\n      return webpdNode;\n  };\n\n  exports.createDefaultSettings = createDefaultSettings;\n  exports.initialize = initialize;\n  exports.readMetadata = readMetadata;\n  exports.run = run;\n\n  return exports;\n\n})({});\n";
+    var WEBPD_RUNTIME_CODE = "var WebPdRuntime = (function (exports) {\n  'use strict';\n\n  var _WebPdWorkletProcessorCode = \"/*\\n * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\\n *\\n * This file is part of WebPd\\n * (see https://github.com/sebpiq/WebPd).\\n *\\n * This program is free software: you can redistribute it and/or modify\\n * it under the terms of the GNU Lesser General Public License as published by\\n * the Free Software Foundation, either version 3 of the License, or\\n * (at your option) any later version.\\n *\\n * This program is distributed in the hope that it will be useful,\\n * but WITHOUT ANY WARRANTY; without even the implied warranty of\\n * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\\n * GNU Lesser General Public License for more details.\\n *\\n * You should have received a copy of the GNU Lesser General Public License\\n * along with this program. If not, see <http://www.gnu.org/licenses/>.\\n */\\nconst FS_CALLBACK_NAMES = [\\n    'onReadSoundFile',\\n    'onOpenSoundReadStream',\\n    'onWriteSoundFile',\\n    'onOpenSoundWriteStream',\\n    'onSoundStreamData',\\n    'onCloseSoundStream',\\n];\\nclass WasmWorkletProcessor extends AudioWorkletProcessor {\\n    constructor() {\\n        super();\\n        this.port.onmessage = this.onMessage.bind(this);\\n        this.settings = {\\n            blockSize: null,\\n            sampleRate,\\n        };\\n        this.dspConfigured = false;\\n        this.engine = null;\\n    }\\n    process(inputs, outputs) {\\n        const output = outputs[0];\\n        const input = inputs[0];\\n        if (!this.dspConfigured) {\\n            if (!this.engine) {\\n                return true;\\n            }\\n            this.settings.blockSize = output[0].length;\\n            this.engine.configure(this.settings.sampleRate, this.settings.blockSize);\\n            this.dspConfigured = true;\\n        }\\n        this.engine.loop(input, output);\\n        return true;\\n    }\\n    onMessage(messageEvent) {\\n        const message = messageEvent.data;\\n        switch (message.type) {\\n            case 'code:WASM':\\n                this.setWasm(message.payload.wasmBuffer);\\n                break;\\n            case 'code:JS':\\n                this.setJsCode(message.payload.jsCode);\\n                break;\\n            case 'io:messageReceiver':\\n                this.engine.io.messageReceivers[message.payload.nodeId][message.payload.portletId](message.payload.message);\\n                break;\\n            case 'fs':\\n                const returned = this.engine.fs[message.payload.functionName].apply(null, message.payload.arguments);\\n                this.port.postMessage({\\n                    type: 'fs',\\n                    payload: {\\n                        functionName: message.payload.functionName + '_return',\\n                        operationId: message.payload.arguments[0],\\n                        returned,\\n                    },\\n                });\\n                break;\\n            case 'destroy':\\n                this.destroy();\\n                break;\\n            default:\\n                new Error(`unknown message type ${message.type}`);\\n        }\\n    }\\n    // TODO : control for channelCount of wasmModule\\n    setWasm(wasmBuffer) {\\n        return AssemblyScriptWasmBindings.createEngine(wasmBuffer).then((engine) => this.setEngine(engine));\\n    }\\n    setJsCode(code) {\\n        const engine = JavaScriptBindings.createEngine(code);\\n        this.setEngine(engine);\\n    }\\n    setEngine(engine) {\\n        FS_CALLBACK_NAMES.forEach((functionName) => {\\n            ;\\n            engine.fs[functionName] = (...args) => {\\n                // We don't use transferables, because that would imply reallocating each time new array in the engine.\\n                this.port.postMessage({\\n                    type: 'fs',\\n                    payload: {\\n                        functionName,\\n                        arguments: args,\\n                    },\\n                });\\n            };\\n        });\\n        this.engine = engine;\\n        this.dspConfigured = false;\\n    }\\n    destroy() {\\n        this.process = () => false;\\n    }\\n}\\nregisterProcessor('webpd-node', WasmWorkletProcessor);\\n\";\n\n  var AssemblyScriptWasmBindingsCode = \"var AssemblyScriptWasmBindings = (function (exports) {\\n    'use strict';\\n\\n    const getFloatArrayType = (bitDepth) => bitDepth === 64 ? Float64Array : Float32Array;\\n    const createModule = (rawModule, bindings) => new Proxy({}, {\\n        get: (_, k) => {\\n            if (bindings.hasOwnProperty(k)) {\\n                const key = String(k);\\n                const bindingSpec = bindings[key];\\n                switch (bindingSpec.type) {\\n                    case 'raw':\\n                        if (k in rawModule) {\\n                            return rawModule[key];\\n                        }\\n                        else {\\n                            throw new Error(`Key ${String(key)} doesn't exist in raw module`);\\n                        }\\n                    case 'proxy':\\n                    case 'callback':\\n                        return bindingSpec.value;\\n                }\\n            }\\n            else {\\n                return undefined;\\n            }\\n        },\\n        set: (_, k, newValue) => {\\n            if (bindings.hasOwnProperty(String(k))) {\\n                const key = String(k);\\n                const bindingSpec = bindings[key];\\n                if (bindingSpec.type === 'callback') {\\n                    bindingSpec.value = newValue;\\n                }\\n                else {\\n                    throw new Error(`Binding key ${String(key)} is read-only`);\\n                }\\n            }\\n            else {\\n                throw new Error(`Key ${String(k)} is not defined in bindings`);\\n            }\\n            return true;\\n        },\\n    });\\n\\n    const liftString = (wasmExports, pointer) => {\\n        if (!pointer)\\n            return null;\\n        pointer = pointer >>> 0;\\n        const end = (pointer +\\n            new Uint32Array(wasmExports.memory.buffer)[(pointer - 4) >>> 2]) >>>\\n            1;\\n        const memoryU16 = new Uint16Array(wasmExports.memory.buffer);\\n        let start = pointer >>> 1;\\n        let string = '';\\n        while (end - start > 1024) {\\n            string += String.fromCharCode(...memoryU16.subarray(start, (start += 1024)));\\n        }\\n        return string + String.fromCharCode(...memoryU16.subarray(start, end));\\n    };\\n    const lowerString = (wasmExports, value) => {\\n        if (value == null)\\n            return 0;\\n        const length = value.length, pointer = wasmExports.__new(length << 1, 1) >>> 0, memoryU16 = new Uint16Array(wasmExports.memory.buffer);\\n        for (let i = 0; i < length; ++i)\\n            memoryU16[(pointer >>> 1) + i] = value.charCodeAt(i);\\n        return pointer;\\n    };\\n    const readTypedArray = (wasmExports, constructor, pointer) => {\\n        if (!pointer)\\n            return null;\\n        const memoryU32 = new Uint32Array(wasmExports.memory.buffer);\\n        return new constructor(wasmExports.memory.buffer, memoryU32[(pointer + 4) >>> 2], memoryU32[(pointer + 8) >>> 2] / constructor.BYTES_PER_ELEMENT);\\n    };\\n    const lowerFloatArray = (wasmExports, bitDepth, data) => {\\n        const arrayType = getFloatArrayType(bitDepth);\\n        const arrayPointer = wasmExports.createFloatArray(data.length);\\n        const array = readTypedArray(wasmExports, arrayType, arrayPointer);\\n        array.set(data);\\n        return { array, arrayPointer };\\n    };\\n    const lowerListOfFloatArrays = (wasmExports, bitDepth, data) => {\\n        const arraysPointer = wasmExports.x_core_createListOfArrays();\\n        data.forEach((array) => {\\n            const { arrayPointer } = lowerFloatArray(wasmExports, bitDepth, array);\\n            wasmExports.x_core_pushToListOfArrays(arraysPointer, arrayPointer);\\n        });\\n        return arraysPointer;\\n    };\\n    const readListOfFloatArrays = (wasmExports, bitDepth, listOfArraysPointer) => {\\n        const listLength = wasmExports.x_core_getListOfArraysLength(listOfArraysPointer);\\n        const arrays = [];\\n        const arrayType = getFloatArrayType(bitDepth);\\n        for (let i = 0; i < listLength; i++) {\\n            const arrayPointer = wasmExports.x_core_getListOfArraysElem(listOfArraysPointer, i);\\n            arrays.push(readTypedArray(wasmExports, arrayType, arrayPointer));\\n        }\\n        return arrays;\\n    };\\n\\n    const liftMessage = (wasmExports, messagePointer) => {\\n        const messageTokenTypesPointer = wasmExports.x_msg_getTokenTypes(messagePointer);\\n        const messageTokenTypes = readTypedArray(wasmExports, Int32Array, messageTokenTypesPointer);\\n        const message = [];\\n        messageTokenTypes.forEach((tokenType, tokenIndex) => {\\n            if (tokenType === wasmExports.MSG_FLOAT_TOKEN.valueOf()) {\\n                message.push(wasmExports.msg_readFloatToken(messagePointer, tokenIndex));\\n            }\\n            else if (tokenType === wasmExports.MSG_STRING_TOKEN.valueOf()) {\\n                const stringPointer = wasmExports.msg_readStringToken(messagePointer, tokenIndex);\\n                message.push(liftString(wasmExports, stringPointer));\\n            }\\n        });\\n        return message;\\n    };\\n    const lowerMessage = (wasmExports, message) => {\\n        const template = message.reduce((template, value) => {\\n            if (typeof value === 'number') {\\n                template.push(wasmExports.MSG_FLOAT_TOKEN.valueOf());\\n            }\\n            else if (typeof value === 'string') {\\n                template.push(wasmExports.MSG_STRING_TOKEN.valueOf());\\n                template.push(value.length);\\n            }\\n            else {\\n                throw new Error(`invalid message value ${value}`);\\n            }\\n            return template;\\n        }, []);\\n        const templateArrayPointer = wasmExports.x_msg_createTemplate(template.length);\\n        const loweredTemplateArray = readTypedArray(wasmExports, Int32Array, templateArrayPointer);\\n        loweredTemplateArray.set(template);\\n        const messagePointer = wasmExports.x_msg_create(templateArrayPointer);\\n        message.forEach((value, index) => {\\n            if (typeof value === 'number') {\\n                wasmExports.msg_writeFloatToken(messagePointer, index, value);\\n            }\\n            else if (typeof value === 'string') {\\n                const stringPointer = lowerString(wasmExports, value);\\n                wasmExports.msg_writeStringToken(messagePointer, index, stringPointer);\\n            }\\n        });\\n        return messagePointer;\\n    };\\n\\n    const mapObject = (src, func) => {\\n        const dest = {};\\n        Object.entries(src).forEach(([key, srcValue], i) => {\\n            dest[key] = func(srcValue, key, i);\\n        });\\n        return dest;\\n    };\\n    const mapArray = (src, func) => {\\n        const dest = {};\\n        src.forEach((srcValue, i) => {\\n            const [key, destValue] = func(srcValue, i);\\n            dest[key] = destValue;\\n        });\\n        return dest;\\n    };\\n\\n    const instantiateWasmModule = async (wasmBuffer, wasmImports = {}) => {\\n        const instanceAndModule = await WebAssembly.instantiate(wasmBuffer, {\\n            env: {\\n                abort: (messagePointer, _, lineNumber, columnNumber) => {\\n                    const message = liftString(wasmExports, messagePointer);\\n                    lineNumber = lineNumber;\\n                    columnNumber = columnNumber;\\n                    (() => {\\n                        throw Error(`${message} at ${lineNumber}:${columnNumber}`);\\n                    })();\\n                },\\n                seed: () => {\\n                    return (() => {\\n                        return Date.now() * Math.random();\\n                    })();\\n                },\\n                'console.log': (textPointer) => {\\n                    console.log(liftString(wasmExports, textPointer));\\n                },\\n            },\\n            ...wasmImports,\\n        });\\n        const wasmExports = instanceAndModule.instance\\n            .exports;\\n        return instanceAndModule.instance;\\n    };\\n\\n    const updateWasmInOuts = (rawModule, engineData) => {\\n        engineData.wasmOutput = readTypedArray(rawModule, engineData.arrayType, rawModule.getOutput());\\n        engineData.wasmInput = readTypedArray(rawModule, engineData.arrayType, rawModule.getInput());\\n    };\\n    const createEngineLifecycleBindings = (rawModule, engineData) => {\\n        return {\\n            configure: {\\n                type: 'proxy',\\n                value: (sampleRate, blockSize) => {\\n                    engineData.metadata.audioSettings.blockSize = blockSize;\\n                    engineData.metadata.audioSettings.sampleRate = sampleRate;\\n                    engineData.blockSize = blockSize;\\n                    rawModule.configure(sampleRate, blockSize);\\n                    updateWasmInOuts(rawModule, engineData);\\n                },\\n            },\\n            loop: {\\n                type: 'proxy',\\n                value: (input, output) => {\\n                    for (let channel = 0; channel < input.length; channel++) {\\n                        engineData.wasmInput.set(input[channel], channel * engineData.blockSize);\\n                    }\\n                    updateWasmInOuts(rawModule, engineData);\\n                    rawModule.loop();\\n                    updateWasmInOuts(rawModule, engineData);\\n                    for (let channel = 0; channel < output.length; channel++) {\\n                        output[channel].set(engineData.wasmOutput.subarray(engineData.blockSize * channel, engineData.blockSize * (channel + 1)));\\n                    }\\n                },\\n            },\\n        };\\n    };\\n    const createIoMessageReceiversBindings = (rawModule, engineData) => mapObject(engineData.metadata.compilation.io.messageReceivers, (spec, nodeId) => ({\\n        type: 'proxy',\\n        value: mapArray(spec.portletIds, (inletId) => [\\n            inletId,\\n            (message) => {\\n                const messagePointer = lowerMessage(rawModule, message);\\n                rawModule[engineData.metadata.compilation.variableNamesIndex.io\\n                    .messageReceivers[nodeId][inletId]](messagePointer);\\n            },\\n        ]),\\n    }));\\n    const createIoMessageSendersBindings = (_, engineData) => mapObject(engineData.metadata.compilation.io.messageSenders, (spec) => ({\\n        type: 'proxy',\\n        value: mapArray(spec.portletIds, (outletId) => [\\n            outletId,\\n            {\\n                onMessage: () => undefined,\\n            },\\n        ]),\\n    }));\\n    const ioMsgSendersImports = (forwardReferences, metadata) => {\\n        const wasmImports = {};\\n        const { variableNamesIndex } = metadata.compilation;\\n        Object.entries(metadata.compilation.io.messageSenders).forEach(([nodeId, spec]) => {\\n            spec.portletIds.forEach((outletId) => {\\n                const listenerName = variableNamesIndex.io.messageSenders[nodeId][outletId];\\n                wasmImports[listenerName] = (messagePointer) => {\\n                    const message = liftMessage(forwardReferences.rawModule, messagePointer);\\n                    forwardReferences.modules.io.messageSenders[nodeId][outletId].onMessage(message);\\n                };\\n            });\\n        });\\n        return wasmImports;\\n    };\\n    const readMetadata = async (wasmBuffer) => {\\n        const inputImports = {};\\n        const wasmModule = WebAssembly.Module.imports(new WebAssembly.Module(wasmBuffer));\\n        wasmModule\\n            .filter((imprt) => imprt.module === 'input' && imprt.kind === 'function')\\n            .forEach((imprt) => (inputImports[imprt.name] = () => undefined));\\n        const wasmInstance = await instantiateWasmModule(wasmBuffer, {\\n            input: inputImports,\\n        });\\n        const wasmExports = wasmInstance.exports;\\n        const stringPointer = wasmExports.metadata.valueOf();\\n        const metadataJSON = liftString(wasmExports, stringPointer);\\n        return JSON.parse(metadataJSON);\\n    };\\n\\n    const createFsBindings = (rawModule, engineData) => ({\\n        sendReadSoundFileResponse: {\\n            type: 'proxy',\\n            value: (operationId, status, sound) => {\\n                let soundPointer = 0;\\n                if (sound) {\\n                    soundPointer = lowerListOfFloatArrays(rawModule, engineData.bitDepth, sound);\\n                }\\n                rawModule.x_fs_onReadSoundFileResponse(operationId, status, soundPointer);\\n                updateWasmInOuts(rawModule, engineData);\\n            },\\n        },\\n        sendWriteSoundFileResponse: {\\n            type: 'proxy',\\n            value: rawModule.x_fs_onWriteSoundFileResponse,\\n        },\\n        sendSoundStreamData: {\\n            type: 'proxy',\\n            value: (operationId, sound) => {\\n                const soundPointer = lowerListOfFloatArrays(rawModule, engineData.bitDepth, sound);\\n                const writtenFrameCount = rawModule.x_fs_onSoundStreamData(operationId, soundPointer);\\n                updateWasmInOuts(rawModule, engineData);\\n                return writtenFrameCount;\\n            },\\n        },\\n        closeSoundStream: {\\n            type: 'proxy',\\n            value: rawModule.x_fs_onCloseSoundStream,\\n        },\\n        onReadSoundFile: { type: 'callback', value: () => undefined },\\n        onWriteSoundFile: { type: 'callback', value: () => undefined },\\n        onOpenSoundReadStream: { type: 'callback', value: () => undefined },\\n        onOpenSoundWriteStream: { type: 'callback', value: () => undefined },\\n        onSoundStreamData: { type: 'callback', value: () => undefined },\\n        onCloseSoundStream: { type: 'callback', value: () => undefined },\\n    });\\n    const createFsImports = (forwardReferences) => {\\n        let wasmImports = {\\n            i_fs_readSoundFile: (operationId, urlPointer, infoPointer) => {\\n                const url = liftString(forwardReferences.rawModule, urlPointer);\\n                const info = liftMessage(forwardReferences.rawModule, infoPointer);\\n                forwardReferences.modules.fs.onReadSoundFile(operationId, url, info);\\n            },\\n            i_fs_writeSoundFile: (operationId, soundPointer, urlPointer, infoPointer) => {\\n                const sound = readListOfFloatArrays(forwardReferences.rawModule, forwardReferences.engineData.bitDepth, soundPointer);\\n                const url = liftString(forwardReferences.rawModule, urlPointer);\\n                const info = liftMessage(forwardReferences.rawModule, infoPointer);\\n                forwardReferences.modules.fs.onWriteSoundFile(operationId, sound, url, info);\\n            },\\n            i_fs_openSoundReadStream: (operationId, urlPointer, infoPointer) => {\\n                const url = liftString(forwardReferences.rawModule, urlPointer);\\n                const info = liftMessage(forwardReferences.rawModule, infoPointer);\\n                updateWasmInOuts(forwardReferences.rawModule, forwardReferences.engineData);\\n                forwardReferences.modules.fs.onOpenSoundReadStream(operationId, url, info);\\n            },\\n            i_fs_openSoundWriteStream: (operationId, urlPointer, infoPointer) => {\\n                const url = liftString(forwardReferences.rawModule, urlPointer);\\n                const info = liftMessage(forwardReferences.rawModule, infoPointer);\\n                forwardReferences.modules.fs.onOpenSoundWriteStream(operationId, url, info);\\n            },\\n            i_fs_sendSoundStreamData: (operationId, blockPointer) => {\\n                const block = readListOfFloatArrays(forwardReferences.rawModule, forwardReferences.engineData.bitDepth, blockPointer);\\n                forwardReferences.modules.fs.onSoundStreamData(operationId, block);\\n            },\\n            i_fs_closeSoundStream: (...args) => forwardReferences.modules.fs.onCloseSoundStream(...args),\\n        };\\n        return wasmImports;\\n    };\\n\\n    const createCommonsBindings = (rawModule, engineData) => ({\\n        getArray: {\\n            type: 'proxy',\\n            value: (arrayName) => {\\n                const arrayNamePointer = lowerString(rawModule, arrayName);\\n                const arrayPointer = rawModule.commons_getArray(arrayNamePointer);\\n                return readTypedArray(rawModule, engineData.arrayType, arrayPointer);\\n            },\\n        },\\n        setArray: {\\n            type: 'proxy',\\n            value: (arrayName, array) => {\\n                const stringPointer = lowerString(rawModule, arrayName);\\n                const { arrayPointer } = lowerFloatArray(rawModule, engineData.bitDepth, array);\\n                rawModule.commons_setArray(stringPointer, arrayPointer);\\n                updateWasmInOuts(rawModule, engineData);\\n            },\\n        },\\n    });\\n\\n    const createEngine = async (wasmBuffer) => {\\n        const { rawModule, engineData, forwardReferences } = await createRawModule(wasmBuffer);\\n        const engineBindings = await createBindings(rawModule, engineData, forwardReferences);\\n        return createModule(rawModule, engineBindings);\\n    };\\n    const createRawModule = async (wasmBuffer) => {\\n        const metadata = await readMetadata(wasmBuffer);\\n        const forwardReferences = { modules: {} };\\n        const wasmImports = {\\n            ...createFsImports(forwardReferences),\\n            ...ioMsgSendersImports(forwardReferences, metadata),\\n        };\\n        const bitDepth = metadata.audioSettings.bitDepth;\\n        const arrayType = getFloatArrayType(bitDepth);\\n        const engineData = {\\n            metadata,\\n            wasmOutput: new arrayType(0),\\n            wasmInput: new arrayType(0),\\n            arrayType,\\n            bitDepth,\\n            blockSize: 0,\\n        };\\n        const wasmInstance = await instantiateWasmModule(wasmBuffer, {\\n            input: wasmImports,\\n        });\\n        const rawModule = wasmInstance.exports;\\n        return { rawModule, engineData, forwardReferences };\\n    };\\n    const createBindings = async (rawModule, engineData, forwardReferences) => {\\n        const commons = createModule(rawModule, createCommonsBindings(rawModule, engineData));\\n        const fs = createModule(rawModule, createFsBindings(rawModule, engineData));\\n        const io = {\\n            messageReceivers: createModule(rawModule, createIoMessageReceiversBindings(rawModule, engineData)),\\n            messageSenders: createModule(rawModule, createIoMessageSendersBindings(rawModule, engineData)),\\n        };\\n        forwardReferences.modules.fs = fs;\\n        forwardReferences.modules.io = io;\\n        forwardReferences.engineData = engineData;\\n        forwardReferences.rawModule = rawModule;\\n        return {\\n            ...createEngineLifecycleBindings(rawModule, engineData),\\n            metadata: { type: 'proxy', value: engineData.metadata },\\n            commons: { type: 'proxy', value: commons },\\n            fs: { type: 'proxy', value: fs },\\n            io: { type: 'proxy', value: io },\\n        };\\n    };\\n\\n    exports.createBindings = createBindings;\\n    exports.createEngine = createEngine;\\n    exports.createRawModule = createRawModule;\\n\\n    return exports;\\n\\n})({});\\n//# sourceMappingURL=assemblyscript-wasm-bindings.iife.js.map\\n\";\n\n  var JavaScriptBindingsCode = \"var JavaScriptBindings = (function (exports) {\\n    'use strict';\\n\\n    const getFloatArrayType = (bitDepth) => bitDepth === 64 ? Float64Array : Float32Array;\\n    const createModule = (rawModule, bindings) => new Proxy({}, {\\n        get: (_, k) => {\\n            if (bindings.hasOwnProperty(k)) {\\n                const key = String(k);\\n                const bindingSpec = bindings[key];\\n                switch (bindingSpec.type) {\\n                    case 'raw':\\n                        if (k in rawModule) {\\n                            return rawModule[key];\\n                        }\\n                        else {\\n                            throw new Error(`Key ${String(key)} doesn't exist in raw module`);\\n                        }\\n                    case 'proxy':\\n                    case 'callback':\\n                        return bindingSpec.value;\\n                }\\n            }\\n            else {\\n                return undefined;\\n            }\\n        },\\n        set: (_, k, newValue) => {\\n            if (bindings.hasOwnProperty(String(k))) {\\n                const key = String(k);\\n                const bindingSpec = bindings[key];\\n                if (bindingSpec.type === 'callback') {\\n                    bindingSpec.value = newValue;\\n                }\\n                else {\\n                    throw new Error(`Binding key ${String(key)} is read-only`);\\n                }\\n            }\\n            else {\\n                throw new Error(`Key ${String(k)} is not defined in bindings`);\\n            }\\n            return true;\\n        },\\n    });\\n\\n    const createRawModule = (code) => new Function(`\\n        ${code}\\n        return exports\\n    `)();\\n    const createBindings = (rawModule) => ({\\n        fs: { type: 'proxy', value: createFsModule(rawModule) },\\n        metadata: { type: 'raw' },\\n        configure: { type: 'raw' },\\n        loop: { type: 'raw' },\\n        io: { type: 'raw' },\\n        commons: {\\n            type: 'proxy',\\n            value: createCommonsModule(rawModule, rawModule.metadata.audioSettings.bitDepth),\\n        },\\n    });\\n    const createEngine = (code) => {\\n        const rawModule = createRawModule(code);\\n        return createModule(rawModule, createBindings(rawModule));\\n    };\\n    const createFsModule = (rawModule) => {\\n        const fs = createModule(rawModule, {\\n            onReadSoundFile: { type: 'callback', value: () => undefined },\\n            onWriteSoundFile: { type: 'callback', value: () => undefined },\\n            onOpenSoundReadStream: { type: 'callback', value: () => undefined },\\n            onOpenSoundWriteStream: { type: 'callback', value: () => undefined },\\n            onSoundStreamData: { type: 'callback', value: () => undefined },\\n            onCloseSoundStream: { type: 'callback', value: () => undefined },\\n            sendReadSoundFileResponse: {\\n                type: 'proxy',\\n                value: rawModule.x_fs_onReadSoundFileResponse,\\n            },\\n            sendWriteSoundFileResponse: {\\n                type: 'proxy',\\n                value: rawModule.x_fs_onWriteSoundFileResponse,\\n            },\\n            sendSoundStreamData: {\\n                type: 'proxy',\\n                value: rawModule.x_fs_onSoundStreamData,\\n            },\\n            closeSoundStream: {\\n                type: 'proxy',\\n                value: rawModule.x_fs_onCloseSoundStream,\\n            },\\n        });\\n        rawModule.i_fs_openSoundWriteStream = (...args) => fs.onOpenSoundWriteStream(...args);\\n        rawModule.i_fs_sendSoundStreamData = (...args) => fs.onSoundStreamData(...args);\\n        rawModule.i_fs_openSoundReadStream = (...args) => fs.onOpenSoundReadStream(...args);\\n        rawModule.i_fs_closeSoundStream = (...args) => fs.onCloseSoundStream(...args);\\n        rawModule.i_fs_writeSoundFile = (...args) => fs.onWriteSoundFile(...args);\\n        rawModule.i_fs_readSoundFile = (...args) => fs.onReadSoundFile(...args);\\n        return fs;\\n    };\\n    const createCommonsModule = (rawModule, bitDepth) => {\\n        const floatArrayType = getFloatArrayType(bitDepth);\\n        return createModule(rawModule, {\\n            getArray: { type: 'proxy', value: rawModule.commons_getArray },\\n            setArray: {\\n                type: 'proxy',\\n                value: (arrayName, array) => rawModule.commons_setArray(arrayName, new floatArrayType(array)),\\n            },\\n        });\\n    };\\n\\n    exports.createBindings = createBindings;\\n    exports.createEngine = createEngine;\\n    exports.createRawModule = createRawModule;\\n\\n    return exports;\\n\\n})({});\\n//# sourceMappingURL=javascript-bindings.iife.js.map\\n\";\n\n  var fetchRetry$1 = function (fetch, defaults) {\n    defaults = defaults || {};\n    if (typeof fetch !== 'function') {\n      throw new ArgumentError('fetch must be a function');\n    }\n\n    if (typeof defaults !== 'object') {\n      throw new ArgumentError('defaults must be an object');\n    }\n\n    if (defaults.retries !== undefined && !isPositiveInteger(defaults.retries)) {\n      throw new ArgumentError('retries must be a positive integer');\n    }\n\n    if (defaults.retryDelay !== undefined && !isPositiveInteger(defaults.retryDelay) && typeof defaults.retryDelay !== 'function') {\n      throw new ArgumentError('retryDelay must be a positive integer or a function returning a positive integer');\n    }\n\n    if (defaults.retryOn !== undefined && !Array.isArray(defaults.retryOn) && typeof defaults.retryOn !== 'function') {\n      throw new ArgumentError('retryOn property expects an array or function');\n    }\n\n    var baseDefaults = {\n      retries: 3,\n      retryDelay: 1000,\n      retryOn: [],\n    };\n\n    defaults = Object.assign(baseDefaults, defaults);\n\n    return function fetchRetry(input, init) {\n      var retries = defaults.retries;\n      var retryDelay = defaults.retryDelay;\n      var retryOn = defaults.retryOn;\n\n      if (init && init.retries !== undefined) {\n        if (isPositiveInteger(init.retries)) {\n          retries = init.retries;\n        } else {\n          throw new ArgumentError('retries must be a positive integer');\n        }\n      }\n\n      if (init && init.retryDelay !== undefined) {\n        if (isPositiveInteger(init.retryDelay) || (typeof init.retryDelay === 'function')) {\n          retryDelay = init.retryDelay;\n        } else {\n          throw new ArgumentError('retryDelay must be a positive integer or a function returning a positive integer');\n        }\n      }\n\n      if (init && init.retryOn) {\n        if (Array.isArray(init.retryOn) || (typeof init.retryOn === 'function')) {\n          retryOn = init.retryOn;\n        } else {\n          throw new ArgumentError('retryOn property expects an array or function');\n        }\n      }\n\n      // eslint-disable-next-line no-undef\n      return new Promise(function (resolve, reject) {\n        var wrappedFetch = function (attempt) {\n          // As of node 18, this is no longer needed since node comes with native support for fetch:\n          /* istanbul ignore next */\n          var _input =\n            typeof Request !== 'undefined' && input instanceof Request\n              ? input.clone()\n              : input;\n          fetch(_input, init)\n            .then(function (response) {\n              if (Array.isArray(retryOn) && retryOn.indexOf(response.status) === -1) {\n                resolve(response);\n              } else if (typeof retryOn === 'function') {\n                try {\n                  // eslint-disable-next-line no-undef\n                  return Promise.resolve(retryOn(attempt, null, response))\n                    .then(function (retryOnResponse) {\n                      if(retryOnResponse) {\n                        retry(attempt, null, response);\n                      } else {\n                        resolve(response);\n                      }\n                    }).catch(reject);\n                } catch (error) {\n                  reject(error);\n                }\n              } else {\n                if (attempt < retries) {\n                  retry(attempt, null, response);\n                } else {\n                  resolve(response);\n                }\n              }\n            })\n            .catch(function (error) {\n              if (typeof retryOn === 'function') {\n                try {\n                  // eslint-disable-next-line no-undef\n                  Promise.resolve(retryOn(attempt, error, null))\n                    .then(function (retryOnResponse) {\n                      if(retryOnResponse) {\n                        retry(attempt, error, null);\n                      } else {\n                        reject(error);\n                      }\n                    })\n                    .catch(function(error) {\n                      reject(error);\n                    });\n                } catch(error) {\n                  reject(error);\n                }\n              } else if (attempt < retries) {\n                retry(attempt, error, null);\n              } else {\n                reject(error);\n              }\n            });\n        };\n\n        function retry(attempt, error, response) {\n          var delay = (typeof retryDelay === 'function') ?\n            retryDelay(attempt, error, response) : retryDelay;\n          setTimeout(function () {\n            wrappedFetch(++attempt);\n          }, delay);\n        }\n\n        wrappedFetch(0);\n      });\n    };\n  };\n\n  function isPositiveInteger(value) {\n    return Number.isInteger(value) && value >= 0;\n  }\n\n  function ArgumentError(message) {\n    this.name = 'ArgumentError';\n    this.message = message;\n  }\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const fetchRetry = fetchRetry$1(fetch);\n  /**\n   * Note : the audio worklet feature is available only in secure context.\n   * This function will fail when used in insecure context (non-https, etc ...)\n   * @see https://developer.mozilla.org/en-US/docs/Web/API/AudioWorklet\n   */\n  const addModule = async (context, processorCode) => {\n      const blob = new Blob([processorCode], { type: 'text/javascript' });\n      const workletProcessorUrl = URL.createObjectURL(blob);\n      return context.audioWorklet.addModule(workletProcessorUrl);\n  };\n  // TODO : testing\n  const fetchFile = async (url) => {\n      let response;\n      try {\n          response = await fetchRetry(url, { retries: 3 });\n      }\n      catch (err) {\n          throw new FileError(response.status, err.toString());\n      }\n      if (!response.ok) {\n          const responseText = await response.text();\n          throw new FileError(response.status, responseText);\n      }\n      return response.arrayBuffer();\n  };\n  const audioBufferToArray = (audioBuffer) => {\n      const sound = [];\n      for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {\n          sound.push(audioBuffer.getChannelData(channel));\n      }\n      return sound;\n  };\n  // TODO : testing\n  const fixSoundChannelCount = (sound, targetChannelCount) => {\n      if (sound.length === 0) {\n          throw new Error(`Received empty sound`);\n      }\n      const floatArrayType = sound[0].constructor;\n      const frameCount = sound[0].length;\n      const fixedSound = sound.slice(0, targetChannelCount);\n      while (sound.length < targetChannelCount) {\n          fixedSound.push(new floatArrayType(frameCount));\n      }\n      return fixedSound;\n  };\n  const resolveRelativeUrl = (rootUrl, relativeUrl) => {\n      return new URL(relativeUrl, rootUrl).href;\n  };\n  class FileError extends Error {\n      constructor(status, msg) {\n          super(`Error ${status} : ${msg}`);\n      }\n  }\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  // TODO : manage transferables\n  class WebPdWorkletNode extends AudioWorkletNode {\n      constructor(context) {\n          super(context, 'webpd-node', {\n              numberOfOutputs: 1,\n              outputChannelCount: [2],\n          });\n      }\n      destroy() {\n          this.port.postMessage({\n              type: 'destroy',\n              payload: {},\n          });\n      }\n  }\n  // Concatenate WorkletProcessor code with the Wasm bindings it needs\n  const WEBPD_WORKLET_PROCESSOR_CODE = AssemblyScriptWasmBindingsCode +\n      ';\\n' +\n      JavaScriptBindingsCode +\n      ';\\n' +\n      _WebPdWorkletProcessorCode;\n  const registerWebPdWorkletNode = (context) => {\n      return addModule(context, WEBPD_WORKLET_PROCESSOR_CODE);\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const FILES = {};\n  const STREAMS = {};\n  class FakeStream {\n      constructor(url, sound) {\n          this.url = url;\n          this.sound = sound;\n          this.frameCount = sound[0].length;\n          this.readPosition = 0;\n      }\n  }\n  const read = async (url) => {\n      if (FILES[url]) {\n          return FILES[url];\n      }\n      const arrayBuffer = await fetchFile(url);\n      return {\n          type: 'binary',\n          data: arrayBuffer,\n      };\n  };\n  // TODO : testing\n  const readSound = async (url, context) => {\n      let fakeFile = FILES[url] || (await read(url));\n      switch (fakeFile.type) {\n          case 'binary':\n              const audioBuffer = await context.decodeAudioData(fakeFile.data);\n              return audioBufferToArray(audioBuffer);\n          case 'sound':\n              // We copy the data here o it can be manipulated freely by the host.\n              // e.g. if the buffer is sent as transferrable to the node we don't want the original to be transferred.\n              return fakeFile.data.map((array) => array.slice());\n      }\n  };\n  const writeSound = async (sound, url) => {\n      FILES[url] = {\n          type: 'sound',\n          data: sound,\n      };\n  };\n  const readStreamSound = async (operationId, url, channelCount, context) => {\n      const sound = await readSound(url, context);\n      STREAMS[operationId] = new FakeStream(url, fixSoundChannelCount(sound, channelCount));\n      return STREAMS[operationId];\n  };\n  const writeStreamSound = async (operationId, url, channelCount) => {\n      const emptySound = [];\n      for (let channel = 0; channel < channelCount; channel++) {\n          emptySound.push(new Float32Array(0));\n      }\n      STREAMS[operationId] = new FakeStream(url, emptySound);\n      FILES[url] = {\n          type: 'sound',\n          data: emptySound,\n      };\n      return STREAMS[operationId];\n  };\n  const getStream = (operationId) => {\n      return STREAMS[operationId];\n  };\n  const killStream = (operationId) => {\n      console.log('KILL STREAM', operationId);\n      delete STREAMS[operationId];\n  };\n  const pullBlock = (stream, frameCount) => {\n      const block = stream.sound.map((array) => array.slice(stream.readPosition, stream.readPosition + frameCount));\n      stream.readPosition += frameCount;\n      return block;\n  };\n  const pushBlock = (stream, block) => {\n      stream.sound = stream.sound.map((channelData, channel) => {\n          const concatenated = new Float32Array(channelData.length + block[channel].length);\n          concatenated.set(channelData);\n          concatenated.set(block[channel], channelData.length);\n          return concatenated;\n      });\n      stream.frameCount = stream.sound[0].length;\n      FILES[stream.url].data = stream.sound;\n  };\n  var fakeFs = {\n      writeSound,\n      readSound,\n      readStreamSound,\n      writeStreamSound,\n      pullBlock,\n      pushBlock,\n  };\n\n  var closeSoundStream = async (_, payload, __) => {\n      if (payload.functionName === 'onCloseSoundStream') {\n          killStream(payload.arguments[0]);\n      }\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  /** Generate an integer series from 0 to `count` (non-inclusive). */\n  const countTo$1 = (count) => {\n      const results = [];\n      for (let i = 0; i < count; i++) {\n          results.push(i);\n      }\n      return results;\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const Var$1 = (typeName, name, value) => _preventToString$1({\n      astType: 'Var',\n      name,\n      type: typeName,\n      value: _prepareVarValue$1(value),\n  });\n  const ConstVar$1 = (typeName, name, value) => _preventToString$1({\n      astType: 'ConstVar',\n      name,\n      type: typeName,\n      value: _prepareVarValue$1(value),\n  });\n  const Func$1 = (name, args = [], returnType = 'void') => (strings, ...content) => _preventToString$1({\n      astType: 'Func',\n      name,\n      args,\n      returnType,\n      body: ast$1(strings, ...content),\n  });\n  const AnonFunc$1 = (args = [], returnType = 'void') => (strings, ...content) => _preventToString$1({\n      astType: 'Func',\n      name: null,\n      args,\n      returnType,\n      body: ast$1(strings, ...content),\n  });\n  const Class$1 = (name, members) => _preventToString$1({\n      astType: 'Class',\n      name,\n      members,\n  });\n  const Sequence$1 = (content) => ({\n      astType: 'Sequence',\n      content: _processRawContent$1(_intersperse$1(content, countTo$1(content.length - 1).map(() => '\\n'))),\n  });\n  const ast$1 = (strings, ...content) => _preventToString$1({\n      astType: 'Sequence',\n      content: _processRawContent$1(_intersperse$1(strings, content)),\n  });\n  const _processRawContent$1 = (content) => {\n      // 1. Flatten arrays and AstSequence, filter out nulls, and convert numbers to strings\n      // Basically converts input to an Array<AstContent>.\n      const flattenedAndFiltered = content.flatMap((element) => {\n          if (typeof element === 'string') {\n              return [element];\n          }\n          else if (typeof element === 'number') {\n              return [element.toString()];\n          }\n          else {\n              if (element === null) {\n                  return [];\n              }\n              else if (Array.isArray(element)) {\n                  return _processRawContent$1(_intersperse$1(element, countTo$1(element.length - 1).map(() => '\\n')));\n              }\n              else if (typeof element === 'object' &&\n                  element.astType === 'Sequence') {\n                  return element.content;\n              }\n              else {\n                  return [element];\n              }\n          }\n      });\n      // 2. Combine adjacent strings\n      const [combinedContent, remainingString] = flattenedAndFiltered.reduce(([combinedContent, currentString], element) => {\n          if (typeof element === 'string') {\n              return [combinedContent, currentString + element];\n          }\n          else {\n              if (currentString.length) {\n                  return [[...combinedContent, currentString, element], ''];\n              }\n              else {\n                  return [[...combinedContent, element], ''];\n              }\n          }\n      }, [[], '']);\n      if (remainingString.length) {\n          combinedContent.push(remainingString);\n      }\n      return combinedContent;\n  };\n  /**\n   * Intersperse content from array1 with content from array2.\n   * `array1.length` must be equal to `array2.length + 1`.\n   */\n  const _intersperse$1 = (array1, array2) => {\n      if (array1.length === 0) {\n          return [];\n      }\n      return array1\n          .slice(1)\n          .reduce((combinedContent, element, i) => combinedContent.concat([array2[i], element]), [array1[0]]);\n  };\n  /**\n   * Prevents AST elements from being rendered as a string, as this is\n   * most likely an error due to unproper use of `ast`.\n   * Deacivated. Activate for debugging by uncommenting the line below.\n   */\n  const _preventToString$1 = (element) => ({\n      ...element,\n      // Uncomment this to activate\n      // toString: () => { throw new Error(`Rendering element ${elemennt.astType} as string is probably an error`) }\n  });\n  const _prepareVarValue$1 = (value) => {\n      if (typeof value === 'number') {\n          return Sequence$1([value.toString()]);\n      }\n      else if (typeof value === 'string') {\n          return Sequence$1([value]);\n      }\n      else {\n          return value;\n      }\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const bufCore$1 = () => Sequence$1([\n      /**\n       * Ring buffer\n       */\n      Class$1('buf_SoundBuffer', [\n          Var$1('FloatArray', 'data'),\n          Var$1('Int', 'length'),\n          Var$1('Int', 'writeCursor'),\n          Var$1('Int', 'pullAvailableLength'),\n      ]),\n      /** Erases all the content from the buffer */\n      Func$1('buf_clear', [\n          Var$1('buf_SoundBuffer', 'buffer')\n      ], 'void') `\n        buffer.data.fill(0)\n    `,\n      /** Erases all the content from the buffer */\n      Func$1('buf_create', [\n          Var$1('Int', 'length')\n      ], 'buf_SoundBuffer') `\n        return {\n            data: createFloatArray(length),\n            length: length,\n            writeCursor: 0,\n            pullAvailableLength: 0,\n        }\n    `\n  ]);\n  const bufPushPull$1 = {\n      codeGenerator: () => Sequence$1([\n          /**\n           * Pushes a block to the buffer, throwing an error if the buffer is full.\n           * If the block is written successfully, {@link buf_SoundBuffer#writeCursor}\n           * is moved corresponding with the length of data written.\n           *\n           * @todo : Optimize by allowing to read/write directly from host\n           */\n          Func$1('buf_pushBlock', [\n              Var$1('buf_SoundBuffer', 'buffer'),\n              Var$1('FloatArray', 'block')\n          ], 'Int') `\n            if (buffer.pullAvailableLength + block.length > buffer.length) {\n                throw new Error('buffer full')\n            }\n\n            ${Var$1('Int', 'left', 'block.length')}\n            while (left > 0) {\n                ${ConstVar$1('Int', 'lengthToWrite', `toInt(Math.min(\n                    toFloat(buffer.length - buffer.writeCursor), \n                    toFloat(left),\n                ))`)}\n                buffer.data.set(\n                    block.subarray(\n                        block.length - left, \n                        block.length - left + lengthToWrite\n                    ), \n                    buffer.writeCursor\n                )\n                left -= lengthToWrite\n                buffer.writeCursor = (buffer.writeCursor + lengthToWrite) % buffer.length\n                buffer.pullAvailableLength += lengthToWrite\n            }\n            return buffer.pullAvailableLength\n        `,\n          /**\n           * Pulls a single sample from the buffer.\n           * This is a destructive operation, and the sample will be\n           * unavailable for subsequent readers with the same operation.\n           */\n          Func$1('buf_pullSample', [\n              Var$1('buf_SoundBuffer', 'buffer')\n          ], 'Float') `\n            if (buffer.pullAvailableLength <= 0) {\n                return 0\n            }\n            ${ConstVar$1('Int', 'readCursor', 'buffer.writeCursor - buffer.pullAvailableLength')}\n            buffer.pullAvailableLength -= 1\n            return buffer.data[readCursor >= 0 ? readCursor : buffer.length + readCursor]\n        `\n      ]),\n      dependencies: [bufCore$1],\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const msg$1 = {\n      codeGenerator: ({ target }) => {\n          const declareFuncs = {\n              msg_create: Func$1('msg_create', [Var$1('MessageTemplate', 'template')], 'Message'),\n              msg_writeStringToken: Func$1('msg_writeStringToken', [\n                  Var$1('Message', 'message'),\n                  Var$1('Int', 'tokenIndex'),\n                  Var$1('string', 'value'),\n              ], 'void'),\n              msg_writeFloatToken: Func$1('msg_writeFloatToken', [\n                  Var$1('Message', 'message'),\n                  Var$1('Int', 'tokenIndex'),\n                  Var$1('MessageFloatToken', 'value'),\n              ], 'void'),\n              msg_readStringToken: Func$1('msg_readStringToken', [\n                  Var$1('Message', 'message'),\n                  Var$1('Int', 'tokenIndex'),\n              ], 'string'),\n              msg_readFloatToken: Func$1('msg_readFloatToken', [\n                  Var$1('Message', 'message'),\n                  Var$1('Int', 'tokenIndex'),\n              ], 'MessageFloatToken'),\n              msg_getLength: Func$1('msg_getLength', [\n                  Var$1('Message', 'message')\n              ], 'Int'),\n              msg_getTokenType: Func$1('msg_getTokenType', [\n                  Var$1('Message', 'message'),\n                  Var$1('Int', 'tokenIndex'),\n              ], 'Int'),\n              msg_isStringToken: Func$1('msg_isStringToken', [\n                  Var$1('Message', 'message'),\n                  Var$1('Int', 'tokenIndex'),\n              ], 'boolean'),\n              msg_isFloatToken: Func$1('msg_isFloatToken', [\n                  Var$1('Message', 'message'),\n                  Var$1('Int', 'tokenIndex'),\n              ], 'boolean'),\n              msg_isMatching: Func$1('msg_isMatching', [\n                  Var$1('Message', 'message'),\n                  Var$1('Array<MessageHeaderEntry>', 'tokenTypes'),\n              ], 'boolean'),\n              msg_floats: Func$1('msg_floats', [\n                  Var$1('Array<Float>', 'values'),\n              ], 'Message'),\n              msg_strings: Func$1('msg_strings', [\n                  Var$1('Array<string>', 'values'),\n              ], 'Message'),\n              msg_display: Func$1('msg_display', [\n                  Var$1('Message', 'message'),\n              ], 'string')\n          };\n          if (target === 'assemblyscript') {\n              return Sequence$1([\n                  `\n                type MessageFloatToken = Float\n                type MessageCharToken = Int\n\n                type MessageTemplate = Array<Int>\n                type MessageHeaderEntry = Int\n                type MessageHeader = Int32Array\n                `,\n                  ConstVar$1('MessageHeaderEntry', 'MSG_FLOAT_TOKEN', '0'),\n                  ConstVar$1('MessageHeaderEntry', 'MSG_STRING_TOKEN', '1'),\n                  // =========================== EXPORTED API\n                  Func$1('x_msg_create', [\n                      Var$1('Int32Array', 'templateTypedArray')\n                  ], 'Message') `\n                    const template: MessageTemplate = new Array<Int>(templateTypedArray.length)\n                    for (let i: Int = 0; i < templateTypedArray.length; i++) {\n                        template[i] = templateTypedArray[i]\n                    }\n                    return msg_create(template)\n                `,\n                  Func$1('x_msg_getTokenTypes', [\n                      Var$1('Message', 'message')\n                  ], 'MessageHeader') `\n                    return message.tokenTypes\n                `,\n                  Func$1('x_msg_createTemplate', [\n                      Var$1('i32', 'length')\n                  ], 'Int32Array') `\n                    return new Int32Array(length)\n                `,\n                  // =========================== MSG API\n                  declareFuncs.msg_create `\n                    let i: Int = 0\n                    let byteCount: Int = 0\n                    let tokenTypes: Array<MessageHeaderEntry> = []\n                    let tokenPositions: Array<MessageHeaderEntry> = []\n\n                    i = 0\n                    while (i < template.length) {\n                        switch(template[i]) {\n                            case MSG_FLOAT_TOKEN:\n                                byteCount += sizeof<MessageFloatToken>()\n                                tokenTypes.push(MSG_FLOAT_TOKEN)\n                                tokenPositions.push(byteCount)\n                                i += 1\n                                break\n                            case MSG_STRING_TOKEN:\n                                byteCount += sizeof<MessageCharToken>() * template[i + 1]\n                                tokenTypes.push(MSG_STRING_TOKEN)\n                                tokenPositions.push(byteCount)\n                                i += 2\n                                break\n                            default:\n                                throw new Error(\"unknown token type : \" + template[i].toString())\n                        }\n                    }\n\n                    const tokenCount = tokenTypes.length\n                    const headerByteCount = _msg_computeHeaderLength(tokenCount) * sizeof<MessageHeaderEntry>()\n                    byteCount += headerByteCount\n\n                    const buffer = new ArrayBuffer(byteCount)\n                    const dataView = new DataView(buffer)\n                    let writePosition: Int = 0\n                    \n                    dataView.setInt32(writePosition, tokenCount)\n                    writePosition += sizeof<MessageHeaderEntry>()\n\n                    for (i = 0; i < tokenCount; i++) {\n                        dataView.setInt32(writePosition, tokenTypes[i])\n                        writePosition += sizeof<MessageHeaderEntry>()\n                    }\n\n                    dataView.setInt32(writePosition, headerByteCount)\n                    writePosition += sizeof<MessageHeaderEntry>()\n                    for (i = 0; i < tokenCount; i++) {\n                        dataView.setInt32(writePosition, headerByteCount + tokenPositions[i])\n                        writePosition += sizeof<MessageHeaderEntry>()\n                    }\n\n                    const header = _msg_unpackHeader(dataView, tokenCount)\n                    return {\n                        dataView,\n                        tokenCount,\n                        header,\n                        tokenTypes: _msg_unpackTokenTypes(header),\n                        tokenPositions: _msg_unpackTokenPositions(header),\n                    }\n                `,\n                  declareFuncs.msg_writeStringToken `\n                    const startPosition = message.tokenPositions[tokenIndex]\n                    const endPosition = message.tokenPositions[tokenIndex + 1]\n                    const expectedStringLength: Int = (endPosition - startPosition) / sizeof<MessageCharToken>()\n                    if (value.length !== expectedStringLength) {\n                        throw new Error('Invalid string size, specified ' + expectedStringLength.toString() + ', received ' + value.length.toString())\n                    }\n\n                    for (let i = 0; i < value.length; i++) {\n                        message.dataView.setInt32(\n                            startPosition + i * sizeof<MessageCharToken>(), \n                            value.codePointAt(i)\n                        )\n                    }\n                `,\n                  declareFuncs.msg_writeFloatToken `\n                    setFloatDataView(message.dataView, message.tokenPositions[tokenIndex], value)\n                `,\n                  declareFuncs.msg_readStringToken `\n                    const startPosition = message.tokenPositions[tokenIndex]\n                    const endPosition = message.tokenPositions[tokenIndex + 1]\n                    const stringLength: Int = (endPosition - startPosition) / sizeof<MessageCharToken>()\n                    let value: string = ''\n                    for (let i = 0; i < stringLength; i++) {\n                        value += String.fromCodePoint(message.dataView.getInt32(startPosition + sizeof<MessageCharToken>() * i))\n                    }\n                    return value\n                `,\n                  declareFuncs.msg_readFloatToken `\n                    return getFloatDataView(message.dataView, message.tokenPositions[tokenIndex])\n                `,\n                  declareFuncs.msg_getLength `\n                    return message.tokenTypes.length\n                `,\n                  declareFuncs.msg_getTokenType `\n                    return message.tokenTypes[tokenIndex]\n                `,\n                  declareFuncs.msg_isStringToken `\n                    return msg_getTokenType(message, tokenIndex) === MSG_STRING_TOKEN\n                `,\n                  declareFuncs.msg_isFloatToken `\n                    return msg_getTokenType(message, tokenIndex) === MSG_FLOAT_TOKEN\n                `,\n                  declareFuncs.msg_isMatching `\n                    if (message.tokenTypes.length !== tokenTypes.length) {\n                        return false\n                    }\n                    for (let i: Int = 0; i < tokenTypes.length; i++) {\n                        if (message.tokenTypes[i] !== tokenTypes[i]) {\n                            return false\n                        }\n                    }\n                    return true\n                `,\n                  declareFuncs.msg_floats `\n                    const message: Message = msg_create(values.map<MessageHeaderEntry>(v => MSG_FLOAT_TOKEN))\n                    for (let i: Int = 0; i < values.length; i++) {\n                        msg_writeFloatToken(message, i, values[i])\n                    }\n                    return message\n                `,\n                  declareFuncs.msg_strings `\n                    const template: MessageTemplate = []\n                    for (let i: Int = 0; i < values.length; i++) {\n                        template.push(MSG_STRING_TOKEN)\n                        template.push(values[i].length)\n                    }\n                    const message: Message = msg_create(template)\n                    for (let i: Int = 0; i < values.length; i++) {\n                        msg_writeStringToken(message, i, values[i])\n                    }\n                    return message\n                `,\n                  declareFuncs.msg_display `\n                    let displayArray: Array<string> = []\n                    for (let i: Int = 0; i < msg_getLength(message); i++) {\n                        if (msg_isFloatToken(message, i)) {\n                            displayArray.push(msg_readFloatToken(message, i).toString())\n                        } else {\n                            displayArray.push('\"' + msg_readStringToken(message, i) + '\"')\n                        }\n                    }\n                    return '[' + displayArray.join(', ') + ']'\n                `,\n                  // =========================== PRIVATE\n                  // Message header : [\n                  //      <Token count>, \n                  //      <Token 1 type>,  ..., <Token N type>, \n                  //      <Token 1 start>, ..., <Token N start>, <Token N end>\n                  //      ... DATA ...\n                  // ]\n                  Class$1('Message', [\n                      Var$1('DataView', 'dataView'),\n                      Var$1('MessageHeader', 'header'),\n                      Var$1('MessageHeaderEntry', 'tokenCount'),\n                      Var$1('MessageHeader', 'tokenTypes'),\n                      Var$1('MessageHeader', 'tokenPositions'),\n                  ]),\n                  Func$1('_msg_computeHeaderLength', [\n                      Var$1('Int', 'tokenCount')\n                  ], 'Int') `\n                    return 1 + tokenCount * 2 + 1\n                `,\n                  Func$1('_msg_unpackTokenCount', [\n                      Var$1('DataView', 'messageDataView')\n                  ], 'MessageHeaderEntry') `\n                    return messageDataView.getInt32(0)\n                `,\n                  Func$1('_msg_unpackHeader', [\n                      Var$1('DataView', 'messageDataView'),\n                      Var$1('MessageHeaderEntry', 'tokenCount'),\n                  ], 'MessageHeader') `\n                    const headerLength = _msg_computeHeaderLength(tokenCount)\n                    // TODO : why is this \\`wrap\\` not working ?\n                    // return Int32Array.wrap(messageDataView.buffer, 0, headerLength)\n                    const messageHeader = new Int32Array(headerLength)\n                    for (let i = 0; i < headerLength; i++) {\n                        messageHeader[i] = messageDataView.getInt32(sizeof<MessageHeaderEntry>() * i)\n                    }\n                    return messageHeader\n                `,\n                  Func$1('_msg_unpackTokenTypes', [\n                      Var$1('MessageHeader', 'header'),\n                  ], 'MessageHeader') `\n                    return header.slice(1, 1 + header[0])\n                `,\n                  Func$1('_msg_unpackTokenPositions', [\n                      Var$1('MessageHeader', 'header'),\n                  ], 'MessageHeader') `\n                    return header.slice(1 + header[0])\n                `,\n              ]);\n          }\n          else if (target === 'javascript') {\n              return Sequence$1([\n                  ConstVar$1('string', 'MSG_FLOAT_TOKEN', '\"number\"'),\n                  ConstVar$1('string', 'MSG_STRING_TOKEN', '\"string\"'),\n                  declareFuncs.msg_create `\n                    const m = []\n                    let i = 0\n                    while (i < template.length) {\n                        if (template[i] === MSG_STRING_TOKEN) {\n                            m.push('')\n                            i += 2\n                        } else if (template[i] === MSG_FLOAT_TOKEN) {\n                            m.push(0)\n                            i += 1\n                        }\n                    }\n                    return m\n                `,\n                  declareFuncs.msg_getLength `\n                    return message.length\n                `,\n                  declareFuncs.msg_getTokenType `\n                    return typeof message[tokenIndex]\n                `,\n                  declareFuncs.msg_isStringToken `\n                    return msg_getTokenType(message, tokenIndex) === 'string'\n                `,\n                  declareFuncs.msg_isFloatToken `\n                    return msg_getTokenType(message, tokenIndex) === 'number'\n                `,\n                  declareFuncs.msg_isMatching `\n                    return (message.length === tokenTypes.length) \n                        && message.every((v, i) => msg_getTokenType(message, i) === tokenTypes[i])\n                `,\n                  declareFuncs.msg_writeFloatToken `\n                    message[tokenIndex] = value\n                `,\n                  declareFuncs.msg_writeStringToken `\n                    message[tokenIndex] = value\n                `,\n                  declareFuncs.msg_readFloatToken `\n                    return message[tokenIndex]\n                `,\n                  declareFuncs.msg_readStringToken `\n                    return message[tokenIndex]\n                `,\n                  declareFuncs.msg_floats `\n                    return values\n                `,\n                  declareFuncs.msg_strings `\n                    return values\n                `,\n                  declareFuncs.msg_display `\n                    return '[' + message\n                        .map(t => typeof t === 'string' ? '\"' + t + '\"' : t.toString())\n                        .join(', ') + ']'\n                `,\n              ]);\n          }\n          else {\n              throw new Error(`Unexpected target: ${target}`);\n          }\n      },\n      exports: [\n          { name: 'x_msg_create', targets: ['assemblyscript'] },\n          { name: 'x_msg_getTokenTypes', targets: ['assemblyscript'] },\n          { name: 'x_msg_createTemplate', targets: ['assemblyscript'] },\n          { name: 'msg_writeStringToken', targets: ['assemblyscript'] },\n          { name: 'msg_writeFloatToken', targets: ['assemblyscript'] },\n          { name: 'msg_readStringToken', targets: ['assemblyscript'] },\n          { name: 'msg_readFloatToken', targets: ['assemblyscript'] },\n          { name: 'MSG_FLOAT_TOKEN', targets: ['assemblyscript'] },\n          { name: 'MSG_STRING_TOKEN', targets: ['assemblyscript'] },\n      ],\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const FS_OPERATION_SUCCESS$1 = 0;\n  const FS_OPERATION_FAILURE$1 = 1;\n  const fsCore$1 = {\n      codeGenerator: ({ target }) => {\n          const content = [];\n          if (target === 'assemblyscript') {\n              content.push(`\n                type fs_OperationId = Int\n                type fs_OperationStatus = Int\n                type fs_OperationCallback = (id: fs_OperationId, status: fs_OperationStatus) => void\n                type fs_OperationSoundCallback = (id: fs_OperationId, status: fs_OperationStatus, sound: FloatArray[]) => void\n                type fs_Url = string\n            `);\n          }\n          return Sequence$1([\n              ...content,\n              ConstVar$1('Int', 'FS_OPERATION_SUCCESS', FS_OPERATION_SUCCESS$1.toString()),\n              ConstVar$1('Int', 'FS_OPERATION_FAILURE', FS_OPERATION_FAILURE$1.toString()),\n              ConstVar$1('Set<fs_OperationId>', '_FS_OPERATIONS_IDS', 'new Set()'),\n              ConstVar$1('Map<fs_OperationId, fs_OperationCallback>', '_FS_OPERATIONS_CALLBACKS', 'new Map()'),\n              ConstVar$1('Map<fs_OperationId, fs_OperationSoundCallback>', '_FS_OPERATIONS_SOUND_CALLBACKS', 'new Map()'),\n              // We start at 1, because 0 is what ASC uses when host forgets to pass an arg to \n              // a function. Therefore we can get false negatives when a test happens to expect a 0.\n              Var$1('Int', '_FS_OPERATION_COUNTER', '1'),\n              Class$1('fs_SoundInfo', [\n                  Var$1('Int', 'channelCount'),\n                  Var$1('Int', 'sampleRate'),\n                  Var$1('Int', 'bitDepth'),\n                  Var$1('string', 'encodingFormat'),\n                  Var$1('string', 'endianness'),\n                  Var$1('string', 'extraOptions'),\n              ]),\n              Func$1('fs_soundInfoToMessage', [\n                  Var$1('fs_SoundInfo', 'soundInfo')\n              ], 'Message') `\n                ${ConstVar$1('Message', 'info', `msg_create([\n                    MSG_FLOAT_TOKEN,\n                    MSG_FLOAT_TOKEN,\n                    MSG_FLOAT_TOKEN,\n                    MSG_STRING_TOKEN,\n                    soundInfo.encodingFormat.length,\n                    MSG_STRING_TOKEN,\n                    soundInfo.endianness.length,\n                    MSG_STRING_TOKEN,\n                    soundInfo.extraOptions.length\n                ])`)}\n                msg_writeFloatToken(info, 0, toFloat(soundInfo.channelCount))\n                msg_writeFloatToken(info, 1, toFloat(soundInfo.sampleRate))\n                msg_writeFloatToken(info, 2, toFloat(soundInfo.bitDepth))\n                msg_writeStringToken(info, 3, soundInfo.encodingFormat)\n                msg_writeStringToken(info, 4, soundInfo.endianness)\n                msg_writeStringToken(info, 5, soundInfo.extraOptions)\n                return info\n            `,\n              Func$1('_fs_assertOperationExists', [\n                  Var$1('fs_OperationId', 'id'),\n                  Var$1('string', 'operationName'),\n              ], 'void') `\n                if (!_FS_OPERATIONS_IDS.has(id)) {\n                    throw new Error(operationName + ' operation unknown : ' + id.toString())\n                }\n            `,\n              Func$1('_fs_createOperationId', [], 'fs_OperationId') `\n                ${ConstVar$1('fs_OperationId', 'id', '_FS_OPERATION_COUNTER++')}\n                _FS_OPERATIONS_IDS.add(id)\n                return id\n            `\n          ]);\n      },\n      dependencies: [msg$1],\n  };\n  ({\n      codeGenerator: () => Sequence$1([\n          Func$1('fs_readSoundFile', [\n              Var$1('fs_Url', 'url'),\n              Var$1('fs_SoundInfo', 'soundInfo'),\n              Var$1('fs_OperationSoundCallback', 'callback'),\n          ], 'fs_OperationId') `\n            ${ConstVar$1('fs_OperationId', 'id', '_fs_createOperationId()')}\n            _FS_OPERATIONS_SOUND_CALLBACKS.set(id, callback)\n            i_fs_readSoundFile(id, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func$1('x_fs_onReadSoundFileResponse', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_OperationStatus', 'status'),\n              Var$1('FloatArray[]', 'sound'),\n          ], 'void') `\n            _fs_assertOperationExists(id, 'x_fs_onReadSoundFileResponse')\n            _FS_OPERATIONS_IDS.delete(id)\n            // Finish cleaning before calling the callback in case it would throw an error.\n            const callback = _FS_OPERATIONS_SOUND_CALLBACKS.get(id)\n            callback(id, status, sound)\n            _FS_OPERATIONS_SOUND_CALLBACKS.delete(id)\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onReadSoundFileResponse',\n          },\n      ],\n      imports: [\n          Func$1('i_fs_readSoundFile', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_Url', 'url'),\n              Var$1('Message', 'info'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsCore$1],\n  });\n  ({\n      codeGenerator: () => Sequence$1([\n          Func$1('fs_writeSoundFile', [\n              Var$1('FloatArray[]', 'sound'),\n              Var$1('fs_Url', 'url'),\n              Var$1('fs_SoundInfo', 'soundInfo'),\n              Var$1('fs_OperationCallback', 'callback'),\n          ], 'fs_OperationId') `\n            ${ConstVar$1('fs_OperationId', 'id', '_fs_createOperationId()')}\n            _FS_OPERATIONS_CALLBACKS.set(id, callback)\n            i_fs_writeSoundFile(id, sound, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func$1('x_fs_onWriteSoundFileResponse', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_OperationStatus', 'status'),\n          ], 'void') `\n            _fs_assertOperationExists(id, 'x_fs_onWriteSoundFileResponse')\n            _FS_OPERATIONS_IDS.delete(id)\n            // Finish cleaning before calling the callback in case it would throw an error.\n            ${ConstVar$1('fs_OperationCallback', 'callback', '_FS_OPERATIONS_CALLBACKS.get(id)')}\n            callback(id, status)\n            _FS_OPERATIONS_CALLBACKS.delete(id)\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onWriteSoundFileResponse',\n          },\n      ],\n      imports: [\n          Func$1('i_fs_writeSoundFile', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('FloatArray[]', 'sound'),\n              Var$1('fs_Url', 'url'),\n              Var$1('Message', 'info'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsCore$1],\n  });\n  const fsSoundStreamCore$1 = {\n      codeGenerator: () => Sequence$1([\n          ConstVar$1('Map<fs_OperationId, Array<buf_SoundBuffer>>', '_FS_SOUND_STREAM_BUFFERS', 'new Map()'),\n          ConstVar$1('Int', '_FS_SOUND_BUFFER_LENGTH', '20 * 44100'),\n          Func$1('fs_closeSoundStream', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_OperationStatus', 'status'),\n          ], 'void') `\n            if (!_FS_OPERATIONS_IDS.has(id)) {\n                return\n            }\n            _FS_OPERATIONS_IDS.delete(id)\n            _FS_OPERATIONS_CALLBACKS.get(id)(id, status)\n            _FS_OPERATIONS_CALLBACKS.delete(id)\n            // Delete this last, to give the callback \n            // a chance to save a reference to the buffer\n            // If write stream, there won't be a buffer\n            if (_FS_SOUND_STREAM_BUFFERS.has(id)) {\n                _FS_SOUND_STREAM_BUFFERS.delete(id)\n            }\n            i_fs_closeSoundStream(id, status)\n        `,\n          Func$1('x_fs_onCloseSoundStream', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_OperationStatus', 'status'),\n          ], 'void') `\n            fs_closeSoundStream(id, status)\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onCloseSoundStream',\n          },\n      ],\n      imports: [\n          Func$1('i_fs_closeSoundStream', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_OperationStatus', 'status'),\n          ], 'void') ``,\n      ],\n      dependencies: [bufCore$1, fsCore$1],\n  };\n  ({\n      codeGenerator: () => Sequence$1([\n          Func$1('fs_openSoundReadStream', [\n              Var$1('fs_Url', 'url'),\n              Var$1('fs_SoundInfo', 'soundInfo'),\n              Var$1('fs_OperationCallback', 'callback'),\n          ], 'fs_OperationId') `\n            ${ConstVar$1('fs_OperationId', 'id', '_fs_createOperationId()')}\n            ${ConstVar$1('Array<buf_SoundBuffer>', 'buffers', '[]')}\n            for (${Var$1('Int', 'channel', '0')}; channel < soundInfo.channelCount; channel++) {\n                buffers.push(buf_create(_FS_SOUND_BUFFER_LENGTH))\n            }\n            _FS_SOUND_STREAM_BUFFERS.set(id, buffers)\n            _FS_OPERATIONS_CALLBACKS.set(id, callback)\n            i_fs_openSoundReadStream(id, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func$1('x_fs_onSoundStreamData', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('FloatArray[]', 'block'),\n          ], 'Int') `\n            _fs_assertOperationExists(id, 'x_fs_onSoundStreamData')\n            const buffers = _FS_SOUND_STREAM_BUFFERS.get(id)\n            for (${Var$1('Int', 'i', '0')}; i < buffers.length; i++) {\n                buf_pushBlock(buffers[i], block[i])\n            }\n            return buffers[0].pullAvailableLength\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onSoundStreamData',\n          },\n      ],\n      imports: [\n          Func$1('i_fs_openSoundReadStream', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_Url', 'url'),\n              Var$1('Message', 'info'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsSoundStreamCore$1, bufPushPull$1],\n  });\n  ({\n      codeGenerator: () => Sequence$1([\n          Func$1('fs_openSoundWriteStream', [\n              Var$1('fs_Url', 'url'),\n              Var$1('fs_SoundInfo', 'soundInfo'),\n              Var$1('fs_OperationCallback', 'callback'),\n          ], 'fs_OperationId') `\n            const id = _fs_createOperationId()\n            _FS_SOUND_STREAM_BUFFERS.set(id, [])\n            _FS_OPERATIONS_CALLBACKS.set(id, callback)\n            i_fs_openSoundWriteStream(id, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func$1('fs_sendSoundStreamData', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('FloatArray[]', 'block')\n          ], 'void') `\n            _fs_assertOperationExists(id, 'fs_sendSoundStreamData')\n            i_fs_sendSoundStreamData(id, block)\n        `\n      ]),\n      imports: [\n          Func$1('i_fs_openSoundWriteStream', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('fs_Url', 'url'),\n              Var$1('Message', 'info'),\n          ], 'void') ``,\n          Func$1('i_fs_sendSoundStreamData', [\n              Var$1('fs_OperationId', 'id'),\n              Var$1('FloatArray[]', 'block'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsSoundStreamCore$1],\n  });\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  AnonFunc$1([Var$1('Message', 'm')], 'void') ``;\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  var readSoundFile = async (node, payload, settings) => {\n      if (payload.functionName === 'onReadSoundFile') {\n          const [operationId, url, [channelCount]] = payload.arguments;\n          const absoluteUrl = resolveRelativeUrl(settings.rootUrl, url);\n          let operationStatus = FS_OPERATION_SUCCESS$1;\n          let sound = null;\n          try {\n              sound = await fakeFs.readSound(absoluteUrl, node.context);\n          }\n          catch (err) {\n              operationStatus = FS_OPERATION_FAILURE$1;\n              console.error(err);\n          }\n          if (sound) {\n              sound = fixSoundChannelCount(sound, channelCount);\n          }\n          node.port.postMessage({\n              type: 'fs',\n              payload: {\n                  functionName: 'sendReadSoundFileResponse',\n                  arguments: [operationId, operationStatus, sound],\n              },\n          }, \n          // Add as transferables to avoid copies between threads\n          sound.map((array) => array.buffer));\n      }\n      else if (payload.functionName === 'sendReadSoundFileResponse_return') ;\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const BUFFER_HIGH = 10 * 44100;\n  const BUFFER_LOW = BUFFER_HIGH / 2;\n  var readSoundStream = async (node, payload, settings) => {\n      if (payload.functionName === 'onOpenSoundReadStream') {\n          const [operationId, url, [channelCount]] = payload.arguments;\n          try {\n              const absoluteUrl = resolveRelativeUrl(settings.rootUrl, url);\n              await fakeFs.readStreamSound(operationId, absoluteUrl, channelCount, node.context);\n          }\n          catch (err) {\n              console.error(err);\n              node.port.postMessage({\n                  type: 'fs',\n                  payload: {\n                      functionName: 'closeSoundStream',\n                      arguments: [operationId, FS_OPERATION_FAILURE$1],\n                  },\n              });\n              return;\n          }\n          streamLoop(node, operationId, 0);\n      }\n      else if (payload.functionName === 'sendSoundStreamData_return') {\n          const stream = getStream(payload.operationId);\n          if (!stream) {\n              throw new Error(`unknown stream ${payload.operationId}`);\n          }\n          streamLoop(node, payload.operationId, payload.returned);\n      }\n      else if (payload.functionName === 'closeSoundStream_return') {\n          const stream = getStream(payload.operationId);\n          if (stream) {\n              killStream(payload.operationId);\n          }\n      }\n  };\n  const streamLoop = (node, operationId, framesAvailableInEngine) => {\n      const sampleRate = node.context.sampleRate;\n      const secondsToThreshold = Math.max(framesAvailableInEngine - BUFFER_LOW, 10) / sampleRate;\n      const framesToSend = BUFFER_HIGH -\n          (framesAvailableInEngine - secondsToThreshold * sampleRate);\n      setTimeout(() => {\n          const stream = getStream(operationId);\n          if (!stream) {\n              console.log(`stream ${operationId} was maybe closed`);\n              return;\n          }\n          if (stream.readPosition < stream.frameCount) {\n              const block = pullBlock(stream, framesToSend);\n              node.port.postMessage({\n                  type: 'fs',\n                  payload: {\n                      functionName: 'sendSoundStreamData',\n                      arguments: [operationId, block],\n                  },\n              }, \n              // Add as transferables to avoid copies between threads\n              block.map((array) => array.buffer));\n          }\n          else {\n              node.port.postMessage({\n                  type: 'fs',\n                  payload: {\n                      functionName: 'closeSoundStream',\n                      arguments: [operationId, FS_OPERATION_SUCCESS$1],\n                  },\n              });\n          }\n      }, secondsToThreshold * 1000);\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  var writeSoundFile = async (node, payload, settings) => {\n      if (payload.functionName === 'onWriteSoundFile') {\n          const [operationId, sound, url, [channelCount]] = payload.arguments;\n          const fixedSound = fixSoundChannelCount(sound, channelCount);\n          const absoluteUrl = resolveRelativeUrl(settings.rootUrl, url);\n          await fakeFs.writeSound(fixedSound, absoluteUrl);\n          let operationStatus = FS_OPERATION_SUCCESS$1;\n          node.port.postMessage({\n              type: 'fs',\n              payload: {\n                  functionName: 'sendWriteSoundFileResponse',\n                  arguments: [operationId, operationStatus],\n              },\n          });\n      }\n      else if (payload.functionName === 'sendWriteSoundFileResponse_return') ;\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  var writeSoundStream = async (_, payload, settings) => {\n      if (payload.functionName === 'onOpenSoundWriteStream') {\n          const [operationId, url, [channelCount]] = payload.arguments;\n          const absoluteUrl = resolveRelativeUrl(settings.rootUrl, url);\n          await fakeFs.writeStreamSound(operationId, absoluteUrl, channelCount);\n      }\n      else if (payload.functionName === 'onSoundStreamData') {\n          const [operationId, sound] = payload.arguments;\n          const stream = getStream(operationId);\n          if (!stream) {\n              throw new Error(`unknown stream ${operationId}`);\n          }\n          pushBlock(stream, sound);\n      }\n      else if (payload.functionName === 'closeSoundStream_return') {\n          const stream = getStream(payload.operationId);\n          if (stream) {\n              killStream(payload.operationId);\n          }\n      }\n  };\n\n  var index = async (node, messageEvent, settings) => {\n      const message = messageEvent.data;\n      const { payload } = message;\n      if (message.type !== 'fs') {\n          throw new Error(`Unknown message type from node ${message.type}`);\n      }\n      if (payload.functionName === 'onReadSoundFile' ||\n          payload.functionName === 'sendReadSoundFileResponse_return') {\n          readSoundFile(node, payload, settings);\n      }\n      else if (payload.functionName === 'onOpenSoundReadStream' ||\n          payload.functionName === 'sendSoundStreamData_return') {\n          readSoundStream(node, payload, settings);\n      }\n      else if (payload.functionName === 'onWriteSoundFile' ||\n          payload.functionName === 'sendWriteSoundFileResponse_return') {\n          writeSoundFile(node, payload, settings);\n      }\n      else if (payload.functionName === 'onOpenSoundWriteStream' ||\n          payload.functionName === 'onSoundStreamData') {\n          writeSoundStream(node, payload, settings);\n      }\n      else if (payload.functionName === 'closeSoundStream_return') {\n          writeSoundStream(node, payload, settings);\n          readSoundStream(node, payload, settings);\n      }\n      else if (payload.functionName === 'onCloseSoundStream') {\n          closeSoundStream(node, payload);\n      }\n      else {\n          throw new Error(`Unknown callback ${payload.functionName}`);\n      }\n  };\n\n  var initialize = (...args) => {\n      return registerWebPdWorkletNode(...args);\n  };\n\n  const urlDirName = (url) => {\n      if (isExternalUrl(url)) {\n          return new URL('.', url).href;\n      }\n      else {\n          return new URL('.', new URL(url, document.URL).href).href;\n      }\n  };\n  const isExternalUrl = (urlString) => {\n      try {\n          const url = new URL(urlString);\n          if (url.origin !== new URL(document.URL, document.baseURI).origin) {\n              return true;\n          }\n      }\n      catch (_e) {\n          new URL(urlString, document.baseURI);\n      }\n      return false;\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  /** Generate an integer series from 0 to `count` (non-inclusive). */\n  const countTo = (count) => {\n      const results = [];\n      for (let i = 0; i < count; i++) {\n          results.push(i);\n      }\n      return results;\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const Var = (typeName, name, value) => _preventToString({\n      astType: 'Var',\n      name,\n      type: typeName,\n      value: _prepareVarValue(value),\n  });\n  const ConstVar = (typeName, name, value) => _preventToString({\n      astType: 'ConstVar',\n      name,\n      type: typeName,\n      value: _prepareVarValue(value),\n  });\n  const Func = (name, args = [], returnType = 'void') => (strings, ...content) => _preventToString({\n      astType: 'Func',\n      name,\n      args,\n      returnType,\n      body: ast(strings, ...content),\n  });\n  const AnonFunc = (args = [], returnType = 'void') => (strings, ...content) => _preventToString({\n      astType: 'Func',\n      name: null,\n      args,\n      returnType,\n      body: ast(strings, ...content),\n  });\n  const Class = (name, members) => _preventToString({\n      astType: 'Class',\n      name,\n      members,\n  });\n  const Sequence = (content) => ({\n      astType: 'Sequence',\n      content: _processRawContent(_intersperse(content, countTo(content.length - 1).map(() => '\\n'))),\n  });\n  const ast = (strings, ...content) => _preventToString({\n      astType: 'Sequence',\n      content: _processRawContent(_intersperse(strings, content)),\n  });\n  const _processRawContent = (content) => {\n      // 1. Flatten arrays and AstSequence, filter out nulls, and convert numbers to strings\n      // Basically converts input to an Array<AstContent>.\n      const flattenedAndFiltered = content.flatMap((element) => {\n          if (typeof element === 'string') {\n              return [element];\n          }\n          else if (typeof element === 'number') {\n              return [element.toString()];\n          }\n          else {\n              if (element === null) {\n                  return [];\n              }\n              else if (Array.isArray(element)) {\n                  return _processRawContent(_intersperse(element, countTo(element.length - 1).map(() => '\\n')));\n              }\n              else if (typeof element === 'object' &&\n                  element.astType === 'Sequence') {\n                  return element.content;\n              }\n              else {\n                  return [element];\n              }\n          }\n      });\n      // 2. Combine adjacent strings\n      const [combinedContent, remainingString] = flattenedAndFiltered.reduce(([combinedContent, currentString], element) => {\n          if (typeof element === 'string') {\n              return [combinedContent, currentString + element];\n          }\n          else {\n              if (currentString.length) {\n                  return [[...combinedContent, currentString, element], ''];\n              }\n              else {\n                  return [[...combinedContent, element], ''];\n              }\n          }\n      }, [[], '']);\n      if (remainingString.length) {\n          combinedContent.push(remainingString);\n      }\n      return combinedContent;\n  };\n  /**\n   * Intersperse content from array1 with content from array2.\n   * `array1.length` must be equal to `array2.length + 1`.\n   */\n  const _intersperse = (array1, array2) => {\n      if (array1.length === 0) {\n          return [];\n      }\n      return array1\n          .slice(1)\n          .reduce((combinedContent, element, i) => combinedContent.concat([array2[i], element]), [array1[0]]);\n  };\n  /**\n   * Prevents AST elements from being rendered as a string, as this is\n   * most likely an error due to unproper use of `ast`.\n   * Deacivated. Activate for debugging by uncommenting the line below.\n   */\n  const _preventToString = (element) => ({\n      ...element,\n      // Uncomment this to activate\n      // toString: () => { throw new Error(`Rendering element ${elemennt.astType} as string is probably an error`) }\n  });\n  const _prepareVarValue = (value) => {\n      if (typeof value === 'number') {\n          return Sequence([value.toString()]);\n      }\n      else if (typeof value === 'string') {\n          return Sequence([value]);\n      }\n      else {\n          return value;\n      }\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const bufCore = () => Sequence([\n      /**\n       * Ring buffer\n       */\n      Class('buf_SoundBuffer', [\n          Var('FloatArray', 'data'),\n          Var('Int', 'length'),\n          Var('Int', 'writeCursor'),\n          Var('Int', 'pullAvailableLength'),\n      ]),\n      /** Erases all the content from the buffer */\n      Func('buf_clear', [\n          Var('buf_SoundBuffer', 'buffer')\n      ], 'void') `\n        buffer.data.fill(0)\n    `,\n      /** Erases all the content from the buffer */\n      Func('buf_create', [\n          Var('Int', 'length')\n      ], 'buf_SoundBuffer') `\n        return {\n            data: createFloatArray(length),\n            length: length,\n            writeCursor: 0,\n            pullAvailableLength: 0,\n        }\n    `\n  ]);\n  const bufPushPull = {\n      codeGenerator: () => Sequence([\n          /**\n           * Pushes a block to the buffer, throwing an error if the buffer is full.\n           * If the block is written successfully, {@link buf_SoundBuffer#writeCursor}\n           * is moved corresponding with the length of data written.\n           *\n           * @todo : Optimize by allowing to read/write directly from host\n           */\n          Func('buf_pushBlock', [\n              Var('buf_SoundBuffer', 'buffer'),\n              Var('FloatArray', 'block')\n          ], 'Int') `\n            if (buffer.pullAvailableLength + block.length > buffer.length) {\n                throw new Error('buffer full')\n            }\n\n            ${Var('Int', 'left', 'block.length')}\n            while (left > 0) {\n                ${ConstVar('Int', 'lengthToWrite', `toInt(Math.min(\n                    toFloat(buffer.length - buffer.writeCursor), \n                    toFloat(left),\n                ))`)}\n                buffer.data.set(\n                    block.subarray(\n                        block.length - left, \n                        block.length - left + lengthToWrite\n                    ), \n                    buffer.writeCursor\n                )\n                left -= lengthToWrite\n                buffer.writeCursor = (buffer.writeCursor + lengthToWrite) % buffer.length\n                buffer.pullAvailableLength += lengthToWrite\n            }\n            return buffer.pullAvailableLength\n        `,\n          /**\n           * Pulls a single sample from the buffer.\n           * This is a destructive operation, and the sample will be\n           * unavailable for subsequent readers with the same operation.\n           */\n          Func('buf_pullSample', [\n              Var('buf_SoundBuffer', 'buffer')\n          ], 'Float') `\n            if (buffer.pullAvailableLength <= 0) {\n                return 0\n            }\n            ${ConstVar('Int', 'readCursor', 'buffer.writeCursor - buffer.pullAvailableLength')}\n            buffer.pullAvailableLength -= 1\n            return buffer.data[readCursor >= 0 ? readCursor : buffer.length + readCursor]\n        `\n      ]),\n      dependencies: [bufCore],\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const msg = {\n      codeGenerator: ({ target }) => {\n          const declareFuncs = {\n              msg_create: Func('msg_create', [Var('MessageTemplate', 'template')], 'Message'),\n              msg_writeStringToken: Func('msg_writeStringToken', [\n                  Var('Message', 'message'),\n                  Var('Int', 'tokenIndex'),\n                  Var('string', 'value'),\n              ], 'void'),\n              msg_writeFloatToken: Func('msg_writeFloatToken', [\n                  Var('Message', 'message'),\n                  Var('Int', 'tokenIndex'),\n                  Var('MessageFloatToken', 'value'),\n              ], 'void'),\n              msg_readStringToken: Func('msg_readStringToken', [\n                  Var('Message', 'message'),\n                  Var('Int', 'tokenIndex'),\n              ], 'string'),\n              msg_readFloatToken: Func('msg_readFloatToken', [\n                  Var('Message', 'message'),\n                  Var('Int', 'tokenIndex'),\n              ], 'MessageFloatToken'),\n              msg_getLength: Func('msg_getLength', [\n                  Var('Message', 'message')\n              ], 'Int'),\n              msg_getTokenType: Func('msg_getTokenType', [\n                  Var('Message', 'message'),\n                  Var('Int', 'tokenIndex'),\n              ], 'Int'),\n              msg_isStringToken: Func('msg_isStringToken', [\n                  Var('Message', 'message'),\n                  Var('Int', 'tokenIndex'),\n              ], 'boolean'),\n              msg_isFloatToken: Func('msg_isFloatToken', [\n                  Var('Message', 'message'),\n                  Var('Int', 'tokenIndex'),\n              ], 'boolean'),\n              msg_isMatching: Func('msg_isMatching', [\n                  Var('Message', 'message'),\n                  Var('Array<MessageHeaderEntry>', 'tokenTypes'),\n              ], 'boolean'),\n              msg_floats: Func('msg_floats', [\n                  Var('Array<Float>', 'values'),\n              ], 'Message'),\n              msg_strings: Func('msg_strings', [\n                  Var('Array<string>', 'values'),\n              ], 'Message'),\n              msg_display: Func('msg_display', [\n                  Var('Message', 'message'),\n              ], 'string')\n          };\n          if (target === 'assemblyscript') {\n              return Sequence([\n                  `\n                type MessageFloatToken = Float\n                type MessageCharToken = Int\n\n                type MessageTemplate = Array<Int>\n                type MessageHeaderEntry = Int\n                type MessageHeader = Int32Array\n                `,\n                  ConstVar('MessageHeaderEntry', 'MSG_FLOAT_TOKEN', '0'),\n                  ConstVar('MessageHeaderEntry', 'MSG_STRING_TOKEN', '1'),\n                  // =========================== EXPORTED API\n                  Func('x_msg_create', [\n                      Var('Int32Array', 'templateTypedArray')\n                  ], 'Message') `\n                    const template: MessageTemplate = new Array<Int>(templateTypedArray.length)\n                    for (let i: Int = 0; i < templateTypedArray.length; i++) {\n                        template[i] = templateTypedArray[i]\n                    }\n                    return msg_create(template)\n                `,\n                  Func('x_msg_getTokenTypes', [\n                      Var('Message', 'message')\n                  ], 'MessageHeader') `\n                    return message.tokenTypes\n                `,\n                  Func('x_msg_createTemplate', [\n                      Var('i32', 'length')\n                  ], 'Int32Array') `\n                    return new Int32Array(length)\n                `,\n                  // =========================== MSG API\n                  declareFuncs.msg_create `\n                    let i: Int = 0\n                    let byteCount: Int = 0\n                    let tokenTypes: Array<MessageHeaderEntry> = []\n                    let tokenPositions: Array<MessageHeaderEntry> = []\n\n                    i = 0\n                    while (i < template.length) {\n                        switch(template[i]) {\n                            case MSG_FLOAT_TOKEN:\n                                byteCount += sizeof<MessageFloatToken>()\n                                tokenTypes.push(MSG_FLOAT_TOKEN)\n                                tokenPositions.push(byteCount)\n                                i += 1\n                                break\n                            case MSG_STRING_TOKEN:\n                                byteCount += sizeof<MessageCharToken>() * template[i + 1]\n                                tokenTypes.push(MSG_STRING_TOKEN)\n                                tokenPositions.push(byteCount)\n                                i += 2\n                                break\n                            default:\n                                throw new Error(\"unknown token type : \" + template[i].toString())\n                        }\n                    }\n\n                    const tokenCount = tokenTypes.length\n                    const headerByteCount = _msg_computeHeaderLength(tokenCount) * sizeof<MessageHeaderEntry>()\n                    byteCount += headerByteCount\n\n                    const buffer = new ArrayBuffer(byteCount)\n                    const dataView = new DataView(buffer)\n                    let writePosition: Int = 0\n                    \n                    dataView.setInt32(writePosition, tokenCount)\n                    writePosition += sizeof<MessageHeaderEntry>()\n\n                    for (i = 0; i < tokenCount; i++) {\n                        dataView.setInt32(writePosition, tokenTypes[i])\n                        writePosition += sizeof<MessageHeaderEntry>()\n                    }\n\n                    dataView.setInt32(writePosition, headerByteCount)\n                    writePosition += sizeof<MessageHeaderEntry>()\n                    for (i = 0; i < tokenCount; i++) {\n                        dataView.setInt32(writePosition, headerByteCount + tokenPositions[i])\n                        writePosition += sizeof<MessageHeaderEntry>()\n                    }\n\n                    const header = _msg_unpackHeader(dataView, tokenCount)\n                    return {\n                        dataView,\n                        tokenCount,\n                        header,\n                        tokenTypes: _msg_unpackTokenTypes(header),\n                        tokenPositions: _msg_unpackTokenPositions(header),\n                    }\n                `,\n                  declareFuncs.msg_writeStringToken `\n                    const startPosition = message.tokenPositions[tokenIndex]\n                    const endPosition = message.tokenPositions[tokenIndex + 1]\n                    const expectedStringLength: Int = (endPosition - startPosition) / sizeof<MessageCharToken>()\n                    if (value.length !== expectedStringLength) {\n                        throw new Error('Invalid string size, specified ' + expectedStringLength.toString() + ', received ' + value.length.toString())\n                    }\n\n                    for (let i = 0; i < value.length; i++) {\n                        message.dataView.setInt32(\n                            startPosition + i * sizeof<MessageCharToken>(), \n                            value.codePointAt(i)\n                        )\n                    }\n                `,\n                  declareFuncs.msg_writeFloatToken `\n                    setFloatDataView(message.dataView, message.tokenPositions[tokenIndex], value)\n                `,\n                  declareFuncs.msg_readStringToken `\n                    const startPosition = message.tokenPositions[tokenIndex]\n                    const endPosition = message.tokenPositions[tokenIndex + 1]\n                    const stringLength: Int = (endPosition - startPosition) / sizeof<MessageCharToken>()\n                    let value: string = ''\n                    for (let i = 0; i < stringLength; i++) {\n                        value += String.fromCodePoint(message.dataView.getInt32(startPosition + sizeof<MessageCharToken>() * i))\n                    }\n                    return value\n                `,\n                  declareFuncs.msg_readFloatToken `\n                    return getFloatDataView(message.dataView, message.tokenPositions[tokenIndex])\n                `,\n                  declareFuncs.msg_getLength `\n                    return message.tokenTypes.length\n                `,\n                  declareFuncs.msg_getTokenType `\n                    return message.tokenTypes[tokenIndex]\n                `,\n                  declareFuncs.msg_isStringToken `\n                    return msg_getTokenType(message, tokenIndex) === MSG_STRING_TOKEN\n                `,\n                  declareFuncs.msg_isFloatToken `\n                    return msg_getTokenType(message, tokenIndex) === MSG_FLOAT_TOKEN\n                `,\n                  declareFuncs.msg_isMatching `\n                    if (message.tokenTypes.length !== tokenTypes.length) {\n                        return false\n                    }\n                    for (let i: Int = 0; i < tokenTypes.length; i++) {\n                        if (message.tokenTypes[i] !== tokenTypes[i]) {\n                            return false\n                        }\n                    }\n                    return true\n                `,\n                  declareFuncs.msg_floats `\n                    const message: Message = msg_create(values.map<MessageHeaderEntry>(v => MSG_FLOAT_TOKEN))\n                    for (let i: Int = 0; i < values.length; i++) {\n                        msg_writeFloatToken(message, i, values[i])\n                    }\n                    return message\n                `,\n                  declareFuncs.msg_strings `\n                    const template: MessageTemplate = []\n                    for (let i: Int = 0; i < values.length; i++) {\n                        template.push(MSG_STRING_TOKEN)\n                        template.push(values[i].length)\n                    }\n                    const message: Message = msg_create(template)\n                    for (let i: Int = 0; i < values.length; i++) {\n                        msg_writeStringToken(message, i, values[i])\n                    }\n                    return message\n                `,\n                  declareFuncs.msg_display `\n                    let displayArray: Array<string> = []\n                    for (let i: Int = 0; i < msg_getLength(message); i++) {\n                        if (msg_isFloatToken(message, i)) {\n                            displayArray.push(msg_readFloatToken(message, i).toString())\n                        } else {\n                            displayArray.push('\"' + msg_readStringToken(message, i) + '\"')\n                        }\n                    }\n                    return '[' + displayArray.join(', ') + ']'\n                `,\n                  // =========================== PRIVATE\n                  // Message header : [\n                  //      <Token count>, \n                  //      <Token 1 type>,  ..., <Token N type>, \n                  //      <Token 1 start>, ..., <Token N start>, <Token N end>\n                  //      ... DATA ...\n                  // ]\n                  Class('Message', [\n                      Var('DataView', 'dataView'),\n                      Var('MessageHeader', 'header'),\n                      Var('MessageHeaderEntry', 'tokenCount'),\n                      Var('MessageHeader', 'tokenTypes'),\n                      Var('MessageHeader', 'tokenPositions'),\n                  ]),\n                  Func('_msg_computeHeaderLength', [\n                      Var('Int', 'tokenCount')\n                  ], 'Int') `\n                    return 1 + tokenCount * 2 + 1\n                `,\n                  Func('_msg_unpackTokenCount', [\n                      Var('DataView', 'messageDataView')\n                  ], 'MessageHeaderEntry') `\n                    return messageDataView.getInt32(0)\n                `,\n                  Func('_msg_unpackHeader', [\n                      Var('DataView', 'messageDataView'),\n                      Var('MessageHeaderEntry', 'tokenCount'),\n                  ], 'MessageHeader') `\n                    const headerLength = _msg_computeHeaderLength(tokenCount)\n                    // TODO : why is this \\`wrap\\` not working ?\n                    // return Int32Array.wrap(messageDataView.buffer, 0, headerLength)\n                    const messageHeader = new Int32Array(headerLength)\n                    for (let i = 0; i < headerLength; i++) {\n                        messageHeader[i] = messageDataView.getInt32(sizeof<MessageHeaderEntry>() * i)\n                    }\n                    return messageHeader\n                `,\n                  Func('_msg_unpackTokenTypes', [\n                      Var('MessageHeader', 'header'),\n                  ], 'MessageHeader') `\n                    return header.slice(1, 1 + header[0])\n                `,\n                  Func('_msg_unpackTokenPositions', [\n                      Var('MessageHeader', 'header'),\n                  ], 'MessageHeader') `\n                    return header.slice(1 + header[0])\n                `,\n              ]);\n          }\n          else if (target === 'javascript') {\n              return Sequence([\n                  ConstVar('string', 'MSG_FLOAT_TOKEN', '\"number\"'),\n                  ConstVar('string', 'MSG_STRING_TOKEN', '\"string\"'),\n                  declareFuncs.msg_create `\n                    const m = []\n                    let i = 0\n                    while (i < template.length) {\n                        if (template[i] === MSG_STRING_TOKEN) {\n                            m.push('')\n                            i += 2\n                        } else if (template[i] === MSG_FLOAT_TOKEN) {\n                            m.push(0)\n                            i += 1\n                        }\n                    }\n                    return m\n                `,\n                  declareFuncs.msg_getLength `\n                    return message.length\n                `,\n                  declareFuncs.msg_getTokenType `\n                    return typeof message[tokenIndex]\n                `,\n                  declareFuncs.msg_isStringToken `\n                    return msg_getTokenType(message, tokenIndex) === 'string'\n                `,\n                  declareFuncs.msg_isFloatToken `\n                    return msg_getTokenType(message, tokenIndex) === 'number'\n                `,\n                  declareFuncs.msg_isMatching `\n                    return (message.length === tokenTypes.length) \n                        && message.every((v, i) => msg_getTokenType(message, i) === tokenTypes[i])\n                `,\n                  declareFuncs.msg_writeFloatToken `\n                    message[tokenIndex] = value\n                `,\n                  declareFuncs.msg_writeStringToken `\n                    message[tokenIndex] = value\n                `,\n                  declareFuncs.msg_readFloatToken `\n                    return message[tokenIndex]\n                `,\n                  declareFuncs.msg_readStringToken `\n                    return message[tokenIndex]\n                `,\n                  declareFuncs.msg_floats `\n                    return values\n                `,\n                  declareFuncs.msg_strings `\n                    return values\n                `,\n                  declareFuncs.msg_display `\n                    return '[' + message\n                        .map(t => typeof t === 'string' ? '\"' + t + '\"' : t.toString())\n                        .join(', ') + ']'\n                `,\n              ]);\n          }\n          else {\n              throw new Error(`Unexpected target: ${target}`);\n          }\n      },\n      exports: [\n          { name: 'x_msg_create', targets: ['assemblyscript'] },\n          { name: 'x_msg_getTokenTypes', targets: ['assemblyscript'] },\n          { name: 'x_msg_createTemplate', targets: ['assemblyscript'] },\n          { name: 'msg_writeStringToken', targets: ['assemblyscript'] },\n          { name: 'msg_writeFloatToken', targets: ['assemblyscript'] },\n          { name: 'msg_readStringToken', targets: ['assemblyscript'] },\n          { name: 'msg_readFloatToken', targets: ['assemblyscript'] },\n          { name: 'MSG_FLOAT_TOKEN', targets: ['assemblyscript'] },\n          { name: 'MSG_STRING_TOKEN', targets: ['assemblyscript'] },\n      ],\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const FS_OPERATION_SUCCESS = 0;\n  const FS_OPERATION_FAILURE = 1;\n  const fsCore = {\n      codeGenerator: ({ target }) => {\n          const content = [];\n          if (target === 'assemblyscript') {\n              content.push(`\n                type fs_OperationId = Int\n                type fs_OperationStatus = Int\n                type fs_OperationCallback = (id: fs_OperationId, status: fs_OperationStatus) => void\n                type fs_OperationSoundCallback = (id: fs_OperationId, status: fs_OperationStatus, sound: FloatArray[]) => void\n                type fs_Url = string\n            `);\n          }\n          return Sequence([\n              ...content,\n              ConstVar('Int', 'FS_OPERATION_SUCCESS', FS_OPERATION_SUCCESS.toString()),\n              ConstVar('Int', 'FS_OPERATION_FAILURE', FS_OPERATION_FAILURE.toString()),\n              ConstVar('Set<fs_OperationId>', '_FS_OPERATIONS_IDS', 'new Set()'),\n              ConstVar('Map<fs_OperationId, fs_OperationCallback>', '_FS_OPERATIONS_CALLBACKS', 'new Map()'),\n              ConstVar('Map<fs_OperationId, fs_OperationSoundCallback>', '_FS_OPERATIONS_SOUND_CALLBACKS', 'new Map()'),\n              // We start at 1, because 0 is what ASC uses when host forgets to pass an arg to \n              // a function. Therefore we can get false negatives when a test happens to expect a 0.\n              Var('Int', '_FS_OPERATION_COUNTER', '1'),\n              Class('fs_SoundInfo', [\n                  Var('Int', 'channelCount'),\n                  Var('Int', 'sampleRate'),\n                  Var('Int', 'bitDepth'),\n                  Var('string', 'encodingFormat'),\n                  Var('string', 'endianness'),\n                  Var('string', 'extraOptions'),\n              ]),\n              Func('fs_soundInfoToMessage', [\n                  Var('fs_SoundInfo', 'soundInfo')\n              ], 'Message') `\n                ${ConstVar('Message', 'info', `msg_create([\n                    MSG_FLOAT_TOKEN,\n                    MSG_FLOAT_TOKEN,\n                    MSG_FLOAT_TOKEN,\n                    MSG_STRING_TOKEN,\n                    soundInfo.encodingFormat.length,\n                    MSG_STRING_TOKEN,\n                    soundInfo.endianness.length,\n                    MSG_STRING_TOKEN,\n                    soundInfo.extraOptions.length\n                ])`)}\n                msg_writeFloatToken(info, 0, toFloat(soundInfo.channelCount))\n                msg_writeFloatToken(info, 1, toFloat(soundInfo.sampleRate))\n                msg_writeFloatToken(info, 2, toFloat(soundInfo.bitDepth))\n                msg_writeStringToken(info, 3, soundInfo.encodingFormat)\n                msg_writeStringToken(info, 4, soundInfo.endianness)\n                msg_writeStringToken(info, 5, soundInfo.extraOptions)\n                return info\n            `,\n              Func('_fs_assertOperationExists', [\n                  Var('fs_OperationId', 'id'),\n                  Var('string', 'operationName'),\n              ], 'void') `\n                if (!_FS_OPERATIONS_IDS.has(id)) {\n                    throw new Error(operationName + ' operation unknown : ' + id.toString())\n                }\n            `,\n              Func('_fs_createOperationId', [], 'fs_OperationId') `\n                ${ConstVar('fs_OperationId', 'id', '_FS_OPERATION_COUNTER++')}\n                _FS_OPERATIONS_IDS.add(id)\n                return id\n            `\n          ]);\n      },\n      dependencies: [msg],\n  };\n  ({\n      codeGenerator: () => Sequence([\n          Func('fs_readSoundFile', [\n              Var('fs_Url', 'url'),\n              Var('fs_SoundInfo', 'soundInfo'),\n              Var('fs_OperationSoundCallback', 'callback'),\n          ], 'fs_OperationId') `\n            ${ConstVar('fs_OperationId', 'id', '_fs_createOperationId()')}\n            _FS_OPERATIONS_SOUND_CALLBACKS.set(id, callback)\n            i_fs_readSoundFile(id, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func('x_fs_onReadSoundFileResponse', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_OperationStatus', 'status'),\n              Var('FloatArray[]', 'sound'),\n          ], 'void') `\n            _fs_assertOperationExists(id, 'x_fs_onReadSoundFileResponse')\n            _FS_OPERATIONS_IDS.delete(id)\n            // Finish cleaning before calling the callback in case it would throw an error.\n            const callback = _FS_OPERATIONS_SOUND_CALLBACKS.get(id)\n            callback(id, status, sound)\n            _FS_OPERATIONS_SOUND_CALLBACKS.delete(id)\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onReadSoundFileResponse',\n          },\n      ],\n      imports: [\n          Func('i_fs_readSoundFile', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_Url', 'url'),\n              Var('Message', 'info'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsCore],\n  });\n  ({\n      codeGenerator: () => Sequence([\n          Func('fs_writeSoundFile', [\n              Var('FloatArray[]', 'sound'),\n              Var('fs_Url', 'url'),\n              Var('fs_SoundInfo', 'soundInfo'),\n              Var('fs_OperationCallback', 'callback'),\n          ], 'fs_OperationId') `\n            ${ConstVar('fs_OperationId', 'id', '_fs_createOperationId()')}\n            _FS_OPERATIONS_CALLBACKS.set(id, callback)\n            i_fs_writeSoundFile(id, sound, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func('x_fs_onWriteSoundFileResponse', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_OperationStatus', 'status'),\n          ], 'void') `\n            _fs_assertOperationExists(id, 'x_fs_onWriteSoundFileResponse')\n            _FS_OPERATIONS_IDS.delete(id)\n            // Finish cleaning before calling the callback in case it would throw an error.\n            ${ConstVar('fs_OperationCallback', 'callback', '_FS_OPERATIONS_CALLBACKS.get(id)')}\n            callback(id, status)\n            _FS_OPERATIONS_CALLBACKS.delete(id)\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onWriteSoundFileResponse',\n          },\n      ],\n      imports: [\n          Func('i_fs_writeSoundFile', [\n              Var('fs_OperationId', 'id'),\n              Var('FloatArray[]', 'sound'),\n              Var('fs_Url', 'url'),\n              Var('Message', 'info'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsCore],\n  });\n  const fsSoundStreamCore = {\n      codeGenerator: () => Sequence([\n          ConstVar('Map<fs_OperationId, Array<buf_SoundBuffer>>', '_FS_SOUND_STREAM_BUFFERS', 'new Map()'),\n          ConstVar('Int', '_FS_SOUND_BUFFER_LENGTH', '20 * 44100'),\n          Func('fs_closeSoundStream', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_OperationStatus', 'status'),\n          ], 'void') `\n            if (!_FS_OPERATIONS_IDS.has(id)) {\n                return\n            }\n            _FS_OPERATIONS_IDS.delete(id)\n            _FS_OPERATIONS_CALLBACKS.get(id)(id, status)\n            _FS_OPERATIONS_CALLBACKS.delete(id)\n            // Delete this last, to give the callback \n            // a chance to save a reference to the buffer\n            // If write stream, there won't be a buffer\n            if (_FS_SOUND_STREAM_BUFFERS.has(id)) {\n                _FS_SOUND_STREAM_BUFFERS.delete(id)\n            }\n            i_fs_closeSoundStream(id, status)\n        `,\n          Func('x_fs_onCloseSoundStream', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_OperationStatus', 'status'),\n          ], 'void') `\n            fs_closeSoundStream(id, status)\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onCloseSoundStream',\n          },\n      ],\n      imports: [\n          Func('i_fs_closeSoundStream', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_OperationStatus', 'status'),\n          ], 'void') ``,\n      ],\n      dependencies: [bufCore, fsCore],\n  };\n  ({\n      codeGenerator: () => Sequence([\n          Func('fs_openSoundReadStream', [\n              Var('fs_Url', 'url'),\n              Var('fs_SoundInfo', 'soundInfo'),\n              Var('fs_OperationCallback', 'callback'),\n          ], 'fs_OperationId') `\n            ${ConstVar('fs_OperationId', 'id', '_fs_createOperationId()')}\n            ${ConstVar('Array<buf_SoundBuffer>', 'buffers', '[]')}\n            for (${Var('Int', 'channel', '0')}; channel < soundInfo.channelCount; channel++) {\n                buffers.push(buf_create(_FS_SOUND_BUFFER_LENGTH))\n            }\n            _FS_SOUND_STREAM_BUFFERS.set(id, buffers)\n            _FS_OPERATIONS_CALLBACKS.set(id, callback)\n            i_fs_openSoundReadStream(id, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func('x_fs_onSoundStreamData', [\n              Var('fs_OperationId', 'id'),\n              Var('FloatArray[]', 'block'),\n          ], 'Int') `\n            _fs_assertOperationExists(id, 'x_fs_onSoundStreamData')\n            const buffers = _FS_SOUND_STREAM_BUFFERS.get(id)\n            for (${Var('Int', 'i', '0')}; i < buffers.length; i++) {\n                buf_pushBlock(buffers[i], block[i])\n            }\n            return buffers[0].pullAvailableLength\n        `\n      ]),\n      exports: [\n          {\n              name: 'x_fs_onSoundStreamData',\n          },\n      ],\n      imports: [\n          Func('i_fs_openSoundReadStream', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_Url', 'url'),\n              Var('Message', 'info'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsSoundStreamCore, bufPushPull],\n  });\n  ({\n      codeGenerator: () => Sequence([\n          Func('fs_openSoundWriteStream', [\n              Var('fs_Url', 'url'),\n              Var('fs_SoundInfo', 'soundInfo'),\n              Var('fs_OperationCallback', 'callback'),\n          ], 'fs_OperationId') `\n            const id = _fs_createOperationId()\n            _FS_SOUND_STREAM_BUFFERS.set(id, [])\n            _FS_OPERATIONS_CALLBACKS.set(id, callback)\n            i_fs_openSoundWriteStream(id, url, fs_soundInfoToMessage(soundInfo))\n            return id\n        `,\n          Func('fs_sendSoundStreamData', [\n              Var('fs_OperationId', 'id'),\n              Var('FloatArray[]', 'block')\n          ], 'void') `\n            _fs_assertOperationExists(id, 'fs_sendSoundStreamData')\n            i_fs_sendSoundStreamData(id, block)\n        `\n      ]),\n      imports: [\n          Func('i_fs_openSoundWriteStream', [\n              Var('fs_OperationId', 'id'),\n              Var('fs_Url', 'url'),\n              Var('Message', 'info'),\n          ], 'void') ``,\n          Func('i_fs_sendSoundStreamData', [\n              Var('fs_OperationId', 'id'),\n              Var('FloatArray[]', 'block'),\n          ], 'void') ``,\n      ],\n      dependencies: [fsSoundStreamCore],\n  });\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  AnonFunc([Var('Message', 'm')], 'void') ``;\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  // NOTE : not necessarily the most logical place to put this function, but we need it here\n  // cause it's imported by the bindings.\n  const getFloatArrayType = (bitDepth) => bitDepth === 64 ? Float64Array : Float32Array;\n  /** Helper to create a Module by wrapping a RawModule with Bindings */\n  const createModule = (rawModule, bindings) => \n  // Use empty object on proxy cause proxy cannot redefine access of member of its target,\n  // which causes issues for example for WebAssembly exports.\n  // See : https://stackoverflow.com/questions/75148897/get-on-proxy-property-items-is-a-read-only-and-non-configurable-data-proper\n  new Proxy({}, {\n      get: (_, k) => {\n          if (bindings.hasOwnProperty(k)) {\n              const key = String(k);\n              const bindingSpec = bindings[key];\n              switch (bindingSpec.type) {\n                  case 'raw':\n                      // Cannot use hasOwnProperty here cause not defined in wasm exports object\n                      if (k in rawModule) {\n                          return rawModule[key];\n                      }\n                      else {\n                          throw new Error(`Key ${String(key)} doesn't exist in raw module`);\n                      }\n                  case 'proxy':\n                  case 'callback':\n                      return bindingSpec.value;\n              }\n              // We need to return undefined here for compatibility with various APIs\n              // which inspect object's attributes.\n          }\n          else {\n              return undefined;\n          }\n      },\n      set: (_, k, newValue) => {\n          if (bindings.hasOwnProperty(String(k))) {\n              const key = String(k);\n              const bindingSpec = bindings[key];\n              if (bindingSpec.type === 'callback') {\n                  bindingSpec.value = newValue;\n              }\n              else {\n                  throw new Error(`Binding key ${String(key)} is read-only`);\n              }\n          }\n          else {\n              throw new Error(`Key ${String(k)} is not defined in bindings`);\n          }\n          return true;\n      },\n  });\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  /** @copyright Assemblyscript ESM bindings */\n  const liftString = (wasmExports, pointer) => {\n      if (!pointer)\n          return null;\n      pointer = pointer >>> 0;\n      const end = (pointer +\n          new Uint32Array(wasmExports.memory.buffer)[(pointer - 4) >>> 2]) >>>\n          1;\n      const memoryU16 = new Uint16Array(wasmExports.memory.buffer);\n      let start = pointer >>> 1;\n      let string = '';\n      while (end - start > 1024) {\n          string += String.fromCharCode(...memoryU16.subarray(start, (start += 1024)));\n      }\n      return string + String.fromCharCode(...memoryU16.subarray(start, end));\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  // REF : Assemblyscript ESM bindings\n  const instantiateWasmModule = async (wasmBuffer, wasmImports = {}) => {\n      const instanceAndModule = await WebAssembly.instantiate(wasmBuffer, {\n          env: {\n              abort: (messagePointer, \n              // filename, not useful because we compile everything to a single string\n              _, lineNumber, columnNumber) => {\n                  const message = liftString(wasmExports, messagePointer);\n                  lineNumber = lineNumber;\n                  columnNumber = columnNumber;\n                  (() => {\n                      // @external.js\n                      throw Error(`${message} at ${lineNumber}:${columnNumber}`);\n                  })();\n              },\n              seed: () => {\n                  return (() => {\n                      return Date.now() * Math.random();\n                  })();\n              },\n              'console.log': (textPointer) => {\n                  console.log(liftString(wasmExports, textPointer));\n              },\n          },\n          ...wasmImports,\n      });\n      const wasmExports = instanceAndModule.instance\n          .exports;\n      return instanceAndModule.instance;\n  };\n\n  const readMetadata$2 = async (wasmBuffer) => {\n      // In order to read metadata, we need to introspect the module to get the imports\n      const inputImports = {};\n      const wasmModule = WebAssembly.Module.imports(new WebAssembly.Module(wasmBuffer));\n      // Then we generate dummy functions to be able to instantiate the module\n      wasmModule\n          .filter((imprt) => imprt.module === 'input' && imprt.kind === 'function')\n          .forEach((imprt) => (inputImports[imprt.name] = () => undefined));\n      const wasmInstance = await instantiateWasmModule(wasmBuffer, {\n          input: inputImports,\n      });\n      // Finally, once the module instantiated, we read the metadata\n      const wasmExports = wasmInstance.exports;\n      const stringPointer = wasmExports.metadata.valueOf();\n      const metadataJSON = liftString(wasmExports, stringPointer);\n      return JSON.parse(metadataJSON);\n  };\n\n  /*\n   * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.\n   *\n   * This file is part of WebPd\n   * (see https://github.com/sebpiq/WebPd).\n   *\n   * This program is free software: you can redistribute it and/or modify\n   * it under the terms of the GNU Lesser General Public License as published by\n   * the Free Software Foundation, either version 3 of the License, or\n   * (at your option) any later version.\n   *\n   * This program is distributed in the hope that it will be useful,\n   * but WITHOUT ANY WARRANTY; without even the implied warranty of\n   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n   * GNU Lesser General Public License for more details.\n   *\n   * You should have received a copy of the GNU Lesser General Public License\n   * along with this program. If not, see <http://www.gnu.org/licenses/>.\n   */\n  const createRawModule = (code) => new Function(`\n        ${code}\n        return exports\n    `)();\n  const createBindings = (rawModule) => ({\n      fs: { type: 'proxy', value: createFsModule(rawModule) },\n      metadata: { type: 'raw' },\n      configure: { type: 'raw' },\n      loop: { type: 'raw' },\n      io: { type: 'raw' },\n      commons: {\n          type: 'proxy',\n          value: createCommonsModule(rawModule, rawModule.metadata.audioSettings.bitDepth),\n      },\n  });\n  const createEngine = (code) => {\n      const rawModule = createRawModule(code);\n      return createModule(rawModule, createBindings(rawModule));\n  };\n  const createFsModule = (rawModule) => {\n      const fs = createModule(rawModule, {\n          onReadSoundFile: { type: 'callback', value: () => undefined },\n          onWriteSoundFile: { type: 'callback', value: () => undefined },\n          onOpenSoundReadStream: { type: 'callback', value: () => undefined },\n          onOpenSoundWriteStream: { type: 'callback', value: () => undefined },\n          onSoundStreamData: { type: 'callback', value: () => undefined },\n          onCloseSoundStream: { type: 'callback', value: () => undefined },\n          sendReadSoundFileResponse: {\n              type: 'proxy',\n              value: rawModule.x_fs_onReadSoundFileResponse,\n          },\n          sendWriteSoundFileResponse: {\n              type: 'proxy',\n              value: rawModule.x_fs_onWriteSoundFileResponse,\n          },\n          sendSoundStreamData: {\n              type: 'proxy',\n              value: rawModule.x_fs_onSoundStreamData,\n          },\n          closeSoundStream: {\n              type: 'proxy',\n              value: rawModule.x_fs_onCloseSoundStream,\n          },\n      });\n      rawModule.i_fs_openSoundWriteStream = (...args) => fs.onOpenSoundWriteStream(...args);\n      rawModule.i_fs_sendSoundStreamData = (...args) => fs.onSoundStreamData(...args);\n      rawModule.i_fs_openSoundReadStream = (...args) => fs.onOpenSoundReadStream(...args);\n      rawModule.i_fs_closeSoundStream = (...args) => fs.onCloseSoundStream(...args);\n      rawModule.i_fs_writeSoundFile = (...args) => fs.onWriteSoundFile(...args);\n      rawModule.i_fs_readSoundFile = (...args) => fs.onReadSoundFile(...args);\n      return fs;\n  };\n  const createCommonsModule = (rawModule, bitDepth) => {\n      const floatArrayType = getFloatArrayType(bitDepth);\n      return createModule(rawModule, {\n          getArray: { type: 'proxy', value: rawModule.commons_getArray },\n          setArray: {\n              type: 'proxy',\n              value: (arrayName, array) => rawModule.commons_setArray(arrayName, new floatArrayType(array)),\n          },\n      });\n  };\n\n  const readMetadata$1 = async (target, compiled) => {\n      switch (target) {\n          case 'assemblyscript':\n              return readMetadata$2(compiled);\n          case 'javascript':\n              return createEngine(compiled).metadata;\n      }\n  };\n\n  const defaultSettingsForRun = (patchUrl) => {\n      const rootUrl = urlDirName(patchUrl);\n      return {\n          messageHandler: (node, message) => index(node, message, { rootUrl }),\n      };\n  };\n  const readMetadata = (compiledPatch) => {\n      if (typeof compiledPatch === 'string') {\n          return readMetadata$1('javascript', compiledPatch);\n      }\n      else {\n          return readMetadata$1('assemblyscript', compiledPatch);\n      }\n  };\n\n  var run = async (audioContext, compiledPatch, settings) => {\n      const { messageHandler } = settings;\n      const webpdNode = new WebPdWorkletNode(audioContext);\n      webpdNode.port.onmessage = (msg) => messageHandler(webpdNode, msg);\n      if (typeof compiledPatch === 'string') {\n          webpdNode.port.postMessage({\n              type: 'code:JS',\n              payload: {\n                  jsCode: compiledPatch,\n              },\n          });\n      }\n      else {\n          webpdNode.port.postMessage({\n              type: 'code:WASM',\n              payload: {\n                  wasmBuffer: compiledPatch,\n              },\n          });\n      }\n      return webpdNode;\n  };\n\n  exports.defaultSettingsForRun = defaultSettingsForRun;\n  exports.initialize = initialize;\n  exports.readMetadata = readMetadata;\n  exports.run = run;\n\n  return exports;\n\n})({});\n";
 
     const WEBPD_RUNTIME_FILENAME = 'webpd-runtime.js';
     var appGenerator = (template, artefacts) => {
@@ -3750,10 +3807,10 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
     };
     const bareBonesApp = (settings) => {
         const { artefacts } = settings;
-        if (!artefacts.compiledJs && !artefacts.wasm) {
-            throw new Error(`Needs at least compiledJs or wasm to run`);
+        if (!artefacts.javascript && !artefacts.wasm) {
+            throw new Error(`Needs at least javascript or wasm to run`);
         }
-        const compiledPatchFilename = artefacts.compiledJs
+        const compiledPatchFilename = artefacts.javascript
             ? 'patch.js'
             : 'patch.wasm';
         // prettier-ignore
@@ -3814,7 +3871,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
 
                 // Fetch the patch code
                 response = await fetch('${compiledPatchFilename}')
-                patch = await ${artefacts.compiledJs ?
+                patch = await ${artefacts.javascript ?
             'response.text()' : 'response.arrayBuffer()'}
 
                 // Comment this if you don't need audio input
@@ -3837,7 +3894,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
                 webpdNode = await WebPdRuntime.run(
                     audioContext, 
                     patch, 
-                    WebPdRuntime.createDefaultSettings('./${compiledPatchFilename}'),
+                    WebPdRuntime.defaultSettingsForRun('./${compiledPatchFilename}'),
                 )
                 webpdNode.connect(audioContext.destination)
 
@@ -3895,11 +3952,11 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
                 if (!metadata) {
                     return '';
                 }
-                else if (metadata.group === 'control') {
+                else if (metadata.group === 'control' || metadata.group === 'control:float') {
                     return `
             //  - nodeId "${nodeId}" portletId "${portletId}"
             //      * type "${metadata.type}"
-            //      * args ${JSON.stringify(metadata.args)}${metadata.label ? `
+            //      * position ${JSON.stringify(metadata.position)}${metadata.label ? `
             //      * label "${metadata.label}"` : ''}
             `;
                 }
@@ -3926,8 +3983,8 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
     </body>
 </html>`
         };
-        if (artefacts.compiledJs) {
-            generatedApp[compiledPatchFilename] = artefacts.compiledJs;
+        if (artefacts.javascript) {
+            generatedApp[compiledPatchFilename] = artefacts.javascript;
         }
         else {
             generatedApp[compiledPatchFilename] = artefacts.wasm;
@@ -4457,7 +4514,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      * along with this program. If not, see <http://www.gnu.org/licenses/>.
      */
     // ------------------------------- node builder ------------------------------ //
-    const builder$P = {
+    const builder$Q = {
         translateArgs: (pdNode) => ({
             channelCount: assertNumber(pdNode.args[0]),
         }),
@@ -4469,7 +4526,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         }),
     };
     // ------------------------------- node implementation ------------------------------ //
-    const nodeImplementation$H = {
+    const nodeImplementation$I = {
         inlineLoop: ({ node, ins }) => ast$1 `${Object.keys(node.inlets)
         .map((inletId) => ins[inletId])
         .join(' + ')}`
@@ -4566,7 +4623,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      * along with this program. If not, see <http://www.gnu.org/licenses/>.
      */
     // ------------------------------- node builder ------------------------------ //
-    const builder$O = {
+    const builder$P = {
         translateArgs: ({ args }) => ({
             initValue: assertOptionalNumber(args[0]) || 0,
         }),
@@ -4580,10 +4637,10 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         }),
     };
     // ------------------------------- node implementation ------------------------------ //
-    const variableNames$B = generateVariableNamesNodeType('sig_t');
-    const nodeImplementation$G = {
+    const variableNames$C = generateVariableNamesNodeType('sig_t');
+    const nodeImplementation$H = {
         initialization: ({ node: { args }, state }) => ast$1 `
-            ${ConstVar$1(variableNames$B.stateClass, state, `{
+            ${ConstVar$1(variableNames$C.stateClass, state, `{
                 currentValue: ${args.initValue}
             }`)}
         `,
@@ -4593,7 +4650,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         }),
         dependencies: [
             () => Sequence$1([
-                Class$1(variableNames$B.stateClass, [
+                Class$1(variableNames$C.stateClass, [
                     Var$1('Float', 'currentValue')
                 ]),
             ]),
@@ -4620,7 +4677,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      * along with this program. If not, see <http://www.gnu.org/licenses/>.
      */
     // ------------------------------- node builder ------------------------------ //
-    const builder$N = {
+    const builder$O = {
         translateArgs: () => ({}),
         build: () => ({
             inlets: {
@@ -4633,7 +4690,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         }),
     };
     // ------------------------------- node implementation ------------------------------ //
-    const nodeImplementation$F = {
+    const nodeImplementation$G = {
         messageReceivers: ({ snds }) => ({
             '0': AnonFunc$1([Var$1('Message', 'm')]) `
             if (msg_isMatching(m, [MSG_FLOAT_TOKEN])) {
@@ -4966,7 +5023,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
                 args: mixerNodeArgs,
                 sources: {},
                 sinks: {},
-                ...builder$P.build(mixerNodeArgs),
+                ...builder$Q.build(mixerNodeArgs),
             });
             connect(graph, {
                 nodeId: implicitMixerNode.id,
@@ -4992,7 +5049,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
                 args: sigNodeArgs,
                 sources: {},
                 sinks: {},
-                ...builder$O.build(sigNodeArgs),
+                ...builder$P.build(sigNodeArgs),
             });
             connect(graph, {
                 nodeId: implicitSigNode.id,
@@ -5012,7 +5069,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
                 args: routeMsgArgs,
                 sources: {},
                 sinks: {},
-                ...builder$N.build(routeMsgArgs),
+                ...builder$O.build(routeMsgArgs),
             });
             let isMsgSortNodeConnected = false;
             if (implicitSigNode) {
@@ -5256,6 +5313,397 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         ep1.nodeId === ep2.nodeId &&
         ep1.portletId === ep2.portletId;
 
+    const EMPTY_BUS_NAME = 'empty';
+    const build = () => ({
+        inlets: {
+            '0': { type: 'message', id: '0' },
+        },
+        outlets: {
+            '0': { type: 'message', id: '0' },
+        },
+        // This is always true, because the object can receive 
+        // messages through message bus
+        isPushingMessages: true
+    });
+    // TODO : move to global code
+    const controlsCoreVariableNames = generateVariableNamesNodeType('control', [
+        'setReceiveBusName',
+        'setSendReceiveFromMessage',
+        'defaultMessageHandler',
+    ]);
+    const controlsCore = () => Sequence$1([
+        Class$1(controlsCoreVariableNames.stateClass, [
+            Var$1('Float', 'minValue'),
+            Var$1('Float', 'maxValue'),
+            Var$1('Float', 'valueFloat'),
+            Var$1('Message', 'value'),
+            Var$1('string', 'receiveBusName'),
+            Var$1('string', 'sendBusName'),
+            Var$1('(m: Message) => void', 'messageReceiver'),
+            Var$1('(m: Message) => void', 'messageSender'),
+        ]),
+        Func$1(controlsCoreVariableNames.setReceiveBusName, [
+            Var$1(controlsCoreVariableNames.stateClass, 'state'),
+            Var$1('string', 'busName'),
+        ], 'void') `
+        if (state.receiveBusName !== "${EMPTY_BUS_NAME}") {
+            msgBusUnsubscribe(state.receiveBusName, state.messageReceiver)
+        }
+        state.receiveBusName = busName
+        if (state.receiveBusName !== "${EMPTY_BUS_NAME}") {
+            msgBusSubscribe(state.receiveBusName, state.messageReceiver)
+        }
+    `,
+        Func$1(controlsCoreVariableNames.setSendReceiveFromMessage, [
+            Var$1(controlsCoreVariableNames.stateClass, 'state'),
+            Var$1('Message', 'm'),
+        ], 'boolean') `
+        if (
+            msg_isMatching(m, [MSG_STRING_TOKEN, MSG_STRING_TOKEN])
+            && msg_readStringToken(m, 0) === 'receive'
+        ) {
+            ${controlsCoreVariableNames.setReceiveBusName}(state, msg_readStringToken(m, 1))
+            return true
+
+        } else if (
+            msg_isMatching(m, [MSG_STRING_TOKEN, MSG_STRING_TOKEN])
+            && msg_readStringToken(m, 0) === 'send'
+        ) {
+            state.sendBusName = msg_readStringToken(m, 1)
+            return true
+        }
+        return false
+    `,
+        Func$1(controlsCoreVariableNames.defaultMessageHandler, [Var$1('Message', 'm')], 'void') ``,
+    ]);
+
+    // TODO : unit tests
+    const signalBuses = () => Sequence$1([
+        ConstVar$1('Map<string, Float>', 'SIGNAL_BUSES', 'new Map()'),
+        `SIGNAL_BUSES.set('', 0)`,
+        Func$1('addAssignSignalBus', [
+            Var$1('string', 'busName'),
+            Var$1('Float', 'value')
+        ], 'Float') `
+            ${ConstVar$1('Float', 'newValue', 'SIGNAL_BUSES.get(busName) + value')}
+            SIGNAL_BUSES.set(
+                busName,
+                newValue,
+            )
+            return newValue
+        `,
+        Func$1('setSignalBus', [
+            Var$1('string', 'busName'),
+            Var$1('Float', 'value'),
+        ], 'void') `
+            SIGNAL_BUSES.set(
+                busName,
+                value,
+            )
+        `,
+        Func$1('resetSignalBus', [
+            Var$1('string', 'busName')
+        ], 'void') `
+            SIGNAL_BUSES.set(busName, 0)
+        `,
+        Func$1('readSignalBus', [Var$1('string', 'busName')], 'Float') `
+            return SIGNAL_BUSES.get(busName)
+        `
+    ]);
+    // TODO : unit tests
+    const messageBuses = {
+        codeGenerator: () => Sequence$1([
+            ConstVar$1('Map<string, Array<(m: Message) => void>>', 'MSG_BUSES', 'new Map()'),
+            Func$1('msgBusPublish', [Var$1('string', 'busName'), Var$1('Message', 'message')], 'void') `
+            ${Var$1('Int', 'i', '0')}
+            ${ConstVar$1('Array<(m: Message) => void>', 'callbacks', 'MSG_BUSES.has(busName) ? MSG_BUSES.get(busName): []')}
+            for (i = 0; i < callbacks.length; i++) {
+                callbacks[i](message)
+            }
+        `,
+            Func$1('msgBusSubscribe', [Var$1('string', 'busName'), Var$1('(m: Message) => void', 'callback')], 'void') `
+            if (!MSG_BUSES.has(busName)) {
+                MSG_BUSES.set(busName, [])
+            }
+            MSG_BUSES.get(busName).push(callback)
+        `,
+            Func$1('msgBusUnsubscribe', [Var$1('string', 'busName'), Var$1('(m: Message) => void', 'callback')], 'void') `
+            if (!MSG_BUSES.has(busName)) {
+                return
+            }
+            ${ConstVar$1('Array<(m: Message) => void>', 'callbacks', 'MSG_BUSES.get(busName)')}
+            ${ConstVar$1('Int', 'found', 'callbacks.indexOf(callback) !== -1')}
+            if (found !== -1) {
+                callbacks.splice(found, 1)
+            }
+        `
+        ]),
+        dependencies: [msg$1],
+    };
+
+    /*
+     * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.
+     *
+     * This file is part of WebPd
+     * (see https://github.com/sebpiq/WebPd).
+     *
+     * This program is free software: you can redistribute it and/or modify
+     * it under the terms of the GNU Lesser General Public License as published by
+     * the Free Software Foundation, either version 3 of the License, or
+     * (at your option) any later version.
+     *
+     * This program is distributed in the hope that it will be useful,
+     * but WITHOUT ANY WARRANTY; without even the implied warranty of
+     * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+     * GNU Lesser General Public License for more details.
+     *
+     * You should have received a copy of the GNU Lesser General Public License
+     * along with this program. If not, see <http://www.gnu.org/licenses/>.
+     */
+    const bangUtils = {
+        codeGenerator: () => Sequence$1([
+            Func$1('msg_isBang', [Var$1('Message', 'message')], 'boolean') `
+            return (
+                msg_isStringToken(message, 0) 
+                && msg_readStringToken(message, 0) === 'bang'
+            )
+        `,
+            Func$1('msg_bang', [], 'Message') `
+            ${ConstVar$1('Message', 'message', 'msg_create([MSG_STRING_TOKEN, 4])')}
+            msg_writeStringToken(message, 0, 'bang')
+            return message
+        `,
+            Func$1('msg_emptyToBang', [Var$1('Message', 'message')], 'Message') `
+            if (msg_getLength(message) === 0) {
+                return msg_bang()
+            } else {
+                return message
+            }
+        `,
+        ]),
+        dependencies: [msg$1],
+    };
+    const msgUtils = {
+        codeGenerator: () => Sequence$1([
+            Func$1('msg_copyTemplate', [Var$1('Message', 'src'), Var$1('Int', 'start'), Var$1('Int', 'end')], 'MessageTemplate') `
+            ${ConstVar$1('MessageTemplate', 'template', '[]')}
+            for (${Var$1('Int', 'i', 'start')}; i < end; i++) {
+                ${ConstVar$1('Int', 'tokenType', 'msg_getTokenType(src, i)')}
+                template.push(tokenType)
+                if (tokenType === MSG_STRING_TOKEN) {
+                    template.push(msg_readStringToken(src, i).length)
+                }
+            }
+            return template
+        `,
+            Func$1('msg_copyMessage', [
+                Var$1('Message', 'src'),
+                Var$1('Message', 'dest'),
+                Var$1('Int', 'srcStart'),
+                Var$1('Int', 'srcEnd'),
+                Var$1('Int', 'destStart'),
+            ], 'void') `
+            ${Var$1('Int', 'i', 'srcStart')}
+            ${Var$1('Int', 'j', 'destStart')}
+            for (i, j; i < srcEnd; i++, j++) {
+                if (msg_getTokenType(src, i) === MSG_STRING_TOKEN) {
+                    msg_writeStringToken(dest, j, msg_readStringToken(src, i))
+                } else {
+                    msg_writeFloatToken(dest, j, msg_readFloatToken(src, i))
+                }
+            }
+        `,
+            Func$1('msg_slice', [Var$1('Message', 'message'), Var$1('Int', 'start'), Var$1('Int', 'end')], 'Message') `
+            if (msg_getLength(message) <= start) {
+                throw new Error('message empty')
+            }
+            ${ConstVar$1('MessageTemplate', 'template', 'msg_copyTemplate(message, start, end)')}
+            ${ConstVar$1('Message', 'newMessage', 'msg_create(template)')}
+            msg_copyMessage(message, newMessage, start, end, 0)
+            return newMessage
+        `,
+            Func$1('msg_concat', [Var$1('Message', 'message1'), Var$1('Message', 'message2')], 'Message') `
+            ${ConstVar$1('Message', 'newMessage', 'msg_create(msg_copyTemplate(message1, 0, msg_getLength(message1)).concat(msg_copyTemplate(message2, 0, msg_getLength(message2))))')}
+            msg_copyMessage(message1, newMessage, 0, msg_getLength(message1), 0)
+            msg_copyMessage(message2, newMessage, 0, msg_getLength(message2), msg_getLength(message1))
+            return newMessage
+        `,
+            Func$1('msg_shift', [Var$1('Message', 'message')], 'Message') `
+            switch (msg_getLength(message)) {
+                case 0:
+                    throw new Error('message empty')
+                case 1:
+                    return msg_create([])
+                default:
+                    return msg_slice(message, 1, msg_getLength(message))
+            }
+        `
+        ]),
+        dependencies: [msg$1],
+    };
+    const stringMsgUtils = {
+        codeGenerator: () => Sequence$1([
+            Func$1('msg_isAction', [Var$1('Message', 'message'), Var$1('string', 'action')], 'boolean') `
+            return msg_isMatching(message, [MSG_STRING_TOKEN])
+                && msg_readStringToken(message, 0) === action
+        `
+        ]),
+        dependencies: [msg$1],
+    };
+
+    /*
+     * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.
+     *
+     * This file is part of WebPd
+     * (see https://github.com/sebpiq/WebPd).
+     *
+     * This program is free software: you can redistribute it and/or modify
+     * it under the terms of the GNU Lesser General Public License as published by
+     * the Free Software Foundation, either version 3 of the License, or
+     * (at your option) any later version.
+     *
+     * This program is distributed in the hope that it will be useful,
+     * but WITHOUT ANY WARRANTY; without even the implied warranty of
+     * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+     * GNU Lesser General Public License for more details.
+     *
+     * You should have received a copy of the GNU Lesser General Public License
+     * along with this program. If not, see <http://www.gnu.org/licenses/>.
+     */
+    // ------------------------------- node builder ------------------------------ //
+    const builderWithInit = {
+        translateArgs: ({ args: [minValue, maxValue, init, initValue, receive, send], }) => ({
+            minValue: assertNumber(minValue),
+            maxValue: assertNumber(maxValue),
+            sendBusName: assertOptionalString(send) || EMPTY_BUS_NAME,
+            receiveBusName: assertOptionalString(receive) || EMPTY_BUS_NAME,
+            initValue: init === 1 ? assertNumber(initValue) : 0,
+            outputOnLoad: !!init,
+        }),
+        build,
+    };
+    const builderWithoutMin = {
+        translateArgs: ({ args: [maxValue, init, initValue, receive, send], }) => ({
+            minValue: 0,
+            maxValue: assertNumber(maxValue),
+            sendBusName: assertOptionalString(send) || EMPTY_BUS_NAME,
+            receiveBusName: assertOptionalString(receive) || EMPTY_BUS_NAME,
+            initValue: init === 1 ? assertNumber(initValue) : 0,
+            outputOnLoad: !!init,
+        }),
+        build,
+    };
+    // ------------------------------- node implementation ------------------------------ //
+    const makeNodeImplementation$8 = ({ prepareStoreValue, prepareStoreValueBang, name }) => {
+        const variableNames = generateVariableNamesNodeType(name, ['receiveMessage']);
+        return {
+            initialization: ({ state, snds, node: { args }, }) => 
+            // There is a circular dependency problem between the state and snds.$0 so we can actually
+            // only use snds.$0 inside the callback of `commons_waitEngineConfigure`.
+            ast$1 `
+                ${ConstVar$1(controlsCoreVariableNames.stateClass, state, ast$1 `{
+                    minValue: ${args.minValue},
+                    maxValue: ${args.maxValue},
+                    valueFloat: ${args.initValue},
+                    value: msg_create([]),
+                    receiveBusName: "${args.receiveBusName}",
+                    sendBusName: "${args.sendBusName}",
+                    messageReceiver: ${controlsCoreVariableNames.defaultMessageHandler},
+                    messageSender: ${controlsCoreVariableNames.defaultMessageHandler},
+                }`)}
+    
+                commons_waitEngineConfigure(() => {
+                    ${state}.messageReceiver = ${AnonFunc$1([Var$1('Message', 'm')]) `
+                        ${variableNames.receiveMessage}(${state}, m)
+                    `}
+                    ${state}.messageSender = ${snds.$0}
+                    ${controlsCoreVariableNames.setReceiveBusName}(${state}, "${args.receiveBusName}")
+                })
+    
+                ${args.outputOnLoad ?
+            `commons_waitFrame(0, () => ${snds.$0}(msg_floats([${state}.valueFloat])))` : null}
+            `,
+            messageReceivers: ({ state, }) => ({
+                '0': AnonFunc$1([Var$1('Message', 'm')]) `
+                ${variableNames.receiveMessage}(${state}, m)
+                return
+            `
+            }),
+            dependencies: [
+                bangUtils,
+                messageBuses,
+                commonsWaitEngineConfigure,
+                commonsWaitFrame,
+                controlsCore,
+                () => Sequence$1([
+                    Func$1(variableNames.receiveMessage, [
+                        Var$1(controlsCoreVariableNames.stateClass, 'state'),
+                        Var$1('Message', 'm'),
+                    ], 'void') `
+                    if (msg_isMatching(m, [MSG_FLOAT_TOKEN])) {
+                        ${prepareStoreValue ?
+                    `state.valueFloat = ${prepareStoreValue(`msg_readFloatToken(m, 0)`)}`
+                    : `state.valueFloat = msg_readFloatToken(m, 0)`}
+                        ${ConstVar$1('Message', 'outMessage', `msg_floats([state.valueFloat])`)}
+                        state.messageSender(outMessage)
+                        if (state.sendBusName !== "${EMPTY_BUS_NAME}") {
+                            msgBusPublish(state.sendBusName, outMessage)
+                        }
+                        return
+        
+                    } else if (msg_isBang(m)) {
+                        ${prepareStoreValueBang ?
+                    `state.valueFloat = ${prepareStoreValueBang(`state.valueFloat`)}`
+                    : null}
+                        ${ConstVar$1('Message', 'outMessage', `msg_floats([state.valueFloat])`)}
+                        state.messageSender(outMessage)
+                        if (state.sendBusName !== "${EMPTY_BUS_NAME}") {
+                            msgBusPublish(state.sendBusName, outMessage)
+                        }
+                        return
+        
+                    } else if (
+                        msg_isMatching(m, [MSG_STRING_TOKEN, MSG_FLOAT_TOKEN]) 
+                        && msg_readStringToken(m, 0) === 'set'
+                    ) {
+                        ${prepareStoreValue ?
+                    `state.valueFloat = ${prepareStoreValue(`msg_readFloatToken(m, 1)`)}`
+                    : `state.valueFloat = msg_readFloatToken(m, 1)`}
+                        return
+                    
+                    } else if (${controlsCoreVariableNames.setSendReceiveFromMessage}(state, m) === true) {
+                        return
+                    }
+                `
+                ]),
+            ],
+        };
+    };
+    // ------------------------------------------------------------------- //
+    const nodeImplementations$e = {
+        'tgl': makeNodeImplementation$8({
+            name: 'tgl',
+            prepareStoreValueBang: (valueCode) => `${valueCode} === 0 ? state.maxValue: 0`
+        }),
+        'nbx': makeNodeImplementation$8({
+            name: 'nbx',
+            prepareStoreValue: (valueCode) => `Math.min(Math.max(${valueCode},state.minValue),state.maxValue)`
+        }),
+        'hsl': makeNodeImplementation$8({ name: 'sl' }),
+        'hradio': makeNodeImplementation$8({ name: 'radio' }),
+    };
+    nodeImplementations$e['vsl'] = nodeImplementations$e['hsl'];
+    nodeImplementations$e['vradio'] = nodeImplementations$e['hradio'];
+    const builders$e = {
+        'tgl': builderWithoutMin,
+        'nbx': builderWithInit,
+        'hsl': builderWithInit,
+        'vsl': builderWithInit,
+        'hradio': builderWithoutMin,
+        'vradio': builderWithoutMin,
+    };
+
+    const FLOAT_CONTROL_TYPES = [...Object.keys(builders$e), 'floatatom'];
     const collectIoMessageReceiversFromSendNodes = (pdJson, graph) => {
         const rootPatch = pdJson.patches[pdJson.rootPatchId];
         const messageReceivers = {};
@@ -5267,18 +5715,20 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
                 // and if we declare messageReceivers for them it will cause error.
                 // TODO : maybe the compiler should detect this instead of doing it here ?
                 !!node) {
-                const layout = pdNode.layout || {};
-                const metadata = {
-                    group: 'send',
-                    name: node.args.busName,
-                    position: layout.x !== undefined && layout.y !== undefined
-                        ? [layout.x, layout.y]
-                        : undefined,
-                };
-                messageReceivers[nodeId] = messageReceivers[nodeId] || {
-                    portletIds: [],
-                    metadata: metadata,
-                };
+                if (!messageReceivers[nodeId]) {
+                    const layout = pdNode.layout || {};
+                    const metadata = {
+                        group: 'send',
+                        name: node.args.busName,
+                        position: layout.x !== undefined && layout.y !== undefined
+                            ? [layout.x, layout.y]
+                            : undefined,
+                    };
+                    messageReceivers[nodeId] = {
+                        portletIds: [],
+                        metadata: metadata,
+                    };
+                }
                 messageReceivers[nodeId].portletIds.push('0');
             }
         });
@@ -5287,28 +5737,39 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
     const collectIoMessageReceiversFromGui = (controls, graph) => {
         const messageReceivers = {};
         traverseGuiControls(controls, (control) => {
-            const nodeId = buildGraphNodeId(control.patch.id, control.node.id);
             const portletId = '0';
-            // Important because some nodes are deleted at dsp-graph compilation.
-            // and if we declare messageReceivers for them it will cause error.
-            // TODO : maybe the compiler should detect this instead of doing it here ?
-            if (!graph[nodeId]) {
-                return;
+            const nodeId = buildGraphNodeId(control.patch.id, control.node.id);
+            if (!messageReceivers[nodeId]) {
+                const node = graph[nodeId];
+                // Important because some nodes are deleted at dsp-graph compilation.
+                // and if we declare messageReceivers for them it will cause error.
+                // TODO : maybe the compiler should detect this instead of doing it here ?
+                if (!node) {
+                    return;
+                }
+                const layout = control.node.layout || {};
+                let metadata = {
+                    group: 'control',
+                    type: control.node.type,
+                    label: layout.label,
+                    position: layout.x !== undefined && layout.y !== undefined
+                        ? [layout.x, layout.y]
+                        : undefined,
+                };
+                if (FLOAT_CONTROL_TYPES.includes(control.node.type)) {
+                    metadata = {
+                        ...metadata,
+                        group: 'control:float',
+                        initValue: node.args.initValue,
+                        minValue: node.args.minValue,
+                        maxValue: node.args.maxValue,
+                    };
+                }
+                messageReceivers[nodeId] = {
+                    portletIds: [],
+                    metadata: metadata,
+                };
             }
-            const layout = control.node.layout || {};
-            const metadata = {
-                group: 'control',
-                type: control.node.type,
-                label: layout.label,
-                position: layout.x !== undefined && layout.y !== undefined
-                    ? [layout.x, layout.y]
-                    : undefined,
-                args: control.node.args,
-            };
-            messageReceivers[nodeId] = messageReceivers[nodeId] || {
-                portletIds: [],
-                metadata: metadata,
-            };
             messageReceivers[nodeId].portletIds.push(portletId);
         });
         return messageReceivers;
@@ -11433,7 +11894,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      */
     const renderWav = async (durationSeconds, artefacts, audioSettings) => {
         let target = 'assemblyscript';
-        if (!artefacts.wasm && !artefacts.compiledJs) {
+        if (!artefacts.wasm && !artefacts.javascript) {
             throw new Error(`Need compiled wasm or compiled js to render wav`);
         }
         if (!artefacts.wasm) {
@@ -11452,7 +11913,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
     const createEngine = async (artefacts, target) => {
         switch (target) {
             case 'javascript':
-                return createEngine$1(getArtefact(artefacts, 'compiledJs'));
+                return createEngine$1(getArtefact(artefacts, 'javascript'));
             case 'assemblyscript':
                 return createEngine$2(getArtefact(artefacts, 'wasm'));
         }
@@ -11500,11 +11961,11 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
             extensions: ['.dsp-graph.json'],
             description: 'WebPd DSP graph',
         },
-        compiledJs: {
+        javascript: {
             extensions: ['.js'],
             description: 'JavaScript WebPd module',
         },
-        compiledAsc: {
+        assemblyscript: {
             extensions: ['.asc'],
             description: 'AssemblyScript DSP code',
         },
@@ -11516,7 +11977,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
             extensions: ['.wav'],
             description: 'An audio preview of your patch',
         },
-        appTemplate: {
+        app: {
             extensions: [],
             description: 'Complete web app embedding your compiled WebPd patch',
         },
@@ -11526,10 +11987,10 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         'pdJson',
         'dspGraph',
         [
-            ['compiledJs', 'wav'],
-            ['compiledAsc', 'wasm', 'wav'],
-            ['compiledAsc', 'wasm', 'appTemplate'],
-            ['compiledJs', 'appTemplate'],
+            ['javascript', 'wav'],
+            ['assemblyscript', 'wasm', 'wav'],
+            ['assemblyscript', 'wasm', 'app'],
+            ['javascript', 'app'],
         ],
     ];
     const guessFormat = (filepath) => {
@@ -11608,7 +12069,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      */
     // TODO : set message not supported
     // ------------------------------- node builder ------------------------------ //
-    const builder$M = {
+    const builder$N = {
         translateArgs: (pdNode, patch) => {
             let channelMapping;
             if (pdNode.args.length) {
@@ -11639,7 +12100,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         }),
     };
     // ------------------------------- node implementation ------------------------------ //
-    const nodeImplementation$E = {
+    const nodeImplementation$F = {
         loop: ({ ins, globs, node, compilation: { settings: { audio }, target }, }) => Sequence$1([
             node.args.channelMapping
                 // Save the original index
@@ -11673,7 +12134,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      */
     // TODO : set message not supported
     // ------------------------------- node builder ------------------------------ //
-    const builder$L = {
+    const builder$M = {
         translateArgs: (pdNode, patch) => {
             let channelMapping;
             if (pdNode.args.length) {
@@ -11703,7 +12164,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         }),
     };
     // ------------------------------- node implementation ------------------------------ //
-    const nodeImplementation$D = {
+    const nodeImplementation$E = {
         loop: ({ outs, globs, node, compilation: { settings: { audio }, target }, }) => Sequence$1([
             node.args.channelMapping
                 // Save the original index 
@@ -11735,118 +12196,8 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      * You should have received a copy of the GNU Lesser General Public License
      * along with this program. If not, see <http://www.gnu.org/licenses/>.
      */
-    const bangUtils = {
-        codeGenerator: () => Sequence$1([
-            Func$1('msg_isBang', [Var$1('Message', 'message')], 'boolean') `
-            return (
-                msg_isStringToken(message, 0) 
-                && msg_readStringToken(message, 0) === 'bang'
-            )
-        `,
-            Func$1('msg_bang', [], 'Message') `
-            ${ConstVar$1('Message', 'message', 'msg_create([MSG_STRING_TOKEN, 4])')}
-            msg_writeStringToken(message, 0, 'bang')
-            return message
-        `,
-            Func$1('msg_emptyToBang', [Var$1('Message', 'message')], 'Message') `
-            if (msg_getLength(message) === 0) {
-                return msg_bang()
-            } else {
-                return message
-            }
-        `,
-        ]),
-        dependencies: [msg$1],
-    };
-    const msgUtils = {
-        codeGenerator: () => Sequence$1([
-            Func$1('msg_copyTemplate', [Var$1('Message', 'src'), Var$1('Int', 'start'), Var$1('Int', 'end')], 'MessageTemplate') `
-            ${ConstVar$1('MessageTemplate', 'template', '[]')}
-            for (${Var$1('Int', 'i', 'start')}; i < end; i++) {
-                ${ConstVar$1('Int', 'tokenType', 'msg_getTokenType(src, i)')}
-                template.push(tokenType)
-                if (tokenType === MSG_STRING_TOKEN) {
-                    template.push(msg_readStringToken(src, i).length)
-                }
-            }
-            return template
-        `,
-            Func$1('msg_copyMessage', [
-                Var$1('Message', 'src'),
-                Var$1('Message', 'dest'),
-                Var$1('Int', 'srcStart'),
-                Var$1('Int', 'srcEnd'),
-                Var$1('Int', 'destStart'),
-            ], 'void') `
-            ${Var$1('Int', 'i', 'srcStart')}
-            ${Var$1('Int', 'j', 'destStart')}
-            for (i, j; i < srcEnd; i++, j++) {
-                if (msg_getTokenType(src, i) === MSG_STRING_TOKEN) {
-                    msg_writeStringToken(dest, j, msg_readStringToken(src, i))
-                } else {
-                    msg_writeFloatToken(dest, j, msg_readFloatToken(src, i))
-                }
-            }
-        `,
-            Func$1('msg_slice', [Var$1('Message', 'message'), Var$1('Int', 'start'), Var$1('Int', 'end')], 'Message') `
-            if (msg_getLength(message) <= start) {
-                throw new Error('message empty')
-            }
-            ${ConstVar$1('MessageTemplate', 'template', 'msg_copyTemplate(message, start, end)')}
-            ${ConstVar$1('Message', 'newMessage', 'msg_create(template)')}
-            msg_copyMessage(message, newMessage, start, end, 0)
-            return newMessage
-        `,
-            Func$1('msg_concat', [Var$1('Message', 'message1'), Var$1('Message', 'message2')], 'Message') `
-            ${ConstVar$1('Message', 'newMessage', 'msg_create(msg_copyTemplate(message1, 0, msg_getLength(message1)).concat(msg_copyTemplate(message2, 0, msg_getLength(message2))))')}
-            msg_copyMessage(message1, newMessage, 0, msg_getLength(message1), 0)
-            msg_copyMessage(message2, newMessage, 0, msg_getLength(message2), msg_getLength(message1))
-            return newMessage
-        `,
-            Func$1('msg_shift', [Var$1('Message', 'message')], 'Message') `
-            switch (msg_getLength(message)) {
-                case 0:
-                    throw new Error('message empty')
-                case 1:
-                    return msg_create([])
-                default:
-                    return msg_slice(message, 1, msg_getLength(message))
-            }
-        `
-        ]),
-        dependencies: [msg$1],
-    };
-    const stringMsgUtils = {
-        codeGenerator: () => Sequence$1([
-            Func$1('msg_isAction', [Var$1('Message', 'message'), Var$1('string', 'action')], 'boolean') `
-            return msg_isMatching(message, [MSG_STRING_TOKEN])
-                && msg_readStringToken(message, 0) === action
-        `
-        ]),
-        dependencies: [msg$1],
-    };
-
-    /*
-     * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.
-     *
-     * This file is part of WebPd
-     * (see https://github.com/sebpiq/WebPd).
-     *
-     * This program is free software: you can redistribute it and/or modify
-     * it under the terms of the GNU Lesser General Public License as published by
-     * the Free Software Foundation, either version 3 of the License, or
-     * (at your option) any later version.
-     *
-     * This program is distributed in the hope that it will be useful,
-     * but WITHOUT ANY WARRANTY; without even the implied warranty of
-     * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-     * GNU Lesser General Public License for more details.
-     *
-     * You should have received a copy of the GNU Lesser General Public License
-     * along with this program. If not, see <http://www.gnu.org/licenses/>.
-     */
     // ------------------------------- node builder ------------------------------ //
-    const builder$K = {
+    const builder$L = {
         translateArgs: () => ({}),
         build: () => ({
             inlets: {
@@ -11858,7 +12209,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         }),
     };
     // ------------------------------- messageReceivers ------------------------------ //
-    const messageReceivers$u = ({ globs, snds }) => ({
+    const messageReceivers$r = ({ globs, snds }) => ({
         '0': AnonFunc$1([Var$1('Message', 'm')]) `
         if (msg_isBang(m)) { 
             ${snds.$0}(msg_floats([${globs.sampleRate}])) 
@@ -11867,8 +12218,8 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
     `,
     });
     // ------------------------------------------------------------------- //
-    const nodeImplementation$C = {
-        messageReceivers: messageReceivers$u,
+    const nodeImplementation$D = {
+        messageReceivers: messageReceivers$r,
         dependencies: [bangUtils]
     };
 
@@ -11892,7 +12243,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      * along with this program. If not, see <http://www.gnu.org/licenses/>.
      */
     // ------------------------------- node builder ------------------------------ //
-    const builder$J = {
+    const builder$K = {
         translateArgs: (pdNode) => ({
             frequency: assertOptionalNumber(pdNode.args[0]) || 0,
         }),
@@ -11912,7 +12263,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
             return undefined;
         },
     };
-    const makeNodeImplementation$8 = ({ name, coeff, generateOperation, }) => {
+    const makeNodeImplementation$7 = ({ name, coeff, generateOperation, }) => {
         // ------------------------------ generateDeclarations ------------------------------ //
         const variableNames = generateVariableNamesNodeType(name, [
             'setPhase'
@@ -11960,19 +12311,79 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
     };
     // ------------------------------------------------------------------- //
     const nodeImplementations$d = {
-        'osc~': makeNodeImplementation$8({
+        'osc~': makeNodeImplementation$7({
             name: 'osc_t',
             coeff: '2 * Math.PI',
             generateOperation: (phase) => `Math.cos(${phase})`
         }),
-        'phasor~': makeNodeImplementation$8({
+        'phasor~': makeNodeImplementation$7({
             name: 'phasor_t',
             generateOperation: (phase) => `${phase} % 1`
         }),
     };
     const builders$d = {
-        'osc~': builder$J,
-        'phasor~': builder$J,
+        'osc~': builder$K,
+        'phasor~': builder$K,
+    };
+
+    /*
+     * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.
+     *
+     * This file is part of WebPd
+     * (see https://github.com/sebpiq/WebPd).
+     *
+     * This program is free software: you can redistribute it and/or modify
+     * it under the terms of the GNU Lesser General Public License as published by
+     * the Free Software Foundation, either version 3 of the License, or
+     * (at your option) any later version.
+     *
+     * This program is distributed in the hope that it will be useful,
+     * but WITHOUT ANY WARRANTY; without even the implied warranty of
+     * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+     * GNU Lesser General Public License for more details.
+     *
+     * You should have received a copy of the GNU Lesser General Public License
+     * along with this program. If not, see <http://www.gnu.org/licenses/>.
+     */
+    // ------------------------------- node builder ------------------------------ //
+    const builder$J = {
+        translateArgs: ({ args }) => ({
+            minValue: assertOptionalNumber(args[0]) || 0,
+            maxValue: assertOptionalNumber(args[1]) || 0,
+        }),
+        build: () => ({
+            inlets: {
+                '0': { type: 'signal', id: '0' },
+                '1': { type: 'message', id: '1' },
+                '2': { type: 'message', id: '2' },
+            },
+            outlets: {
+                '0': { type: 'signal', id: '0' },
+            },
+        })
+    };
+    // ------------------------------- node implementation ------------------------------ //
+    const variableNames$B = generateVariableNamesNodeType('clip_t');
+    const nodeImplementation$C = {
+        initialization: ({ node: { args }, state }) => ast$1 `
+            ${ConstVar$1(variableNames$B.stateClass, state, `{
+                minValue: ${args.minValue},
+                maxValue: ${args.maxValue},
+            }`)}
+        `,
+        inlineLoop: ({ ins, state }) => ast$1 `Math.max(Math.min(${state}.maxValue, ${ins.$0}), ${state}.minValue)`,
+        messageReceivers: ({ state }) => ({
+            '1': coldFloatInlet(`${state}.minValue`),
+            '2': coldFloatInlet(`${state}.maxValue`),
+        }),
+        dependencies: [
+            () => Sequence$1([
+                Class$1(variableNames$B.stateClass, [
+                    Var$1('Float', 'minValue'),
+                    Var$1('Float', 'maxValue'),
+                ]),
+            ])
+        ],
     };
 
     /*
@@ -11996,43 +12407,77 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      */
     // ------------------------------- node builder ------------------------------ //
     const builder$I = {
-        translateArgs: ({ args }) => ({
-            minValue: assertOptionalNumber(args[0]) || 0,
-            maxValue: assertOptionalNumber(args[1]) || 0,
-        }),
+        translateArgs: () => ({}),
         build: () => ({
             inlets: {
                 '0': { type: 'signal', id: '0' },
-                '1': { type: 'message', id: '1' },
-                '2': { type: 'message', id: '2' },
+                '0_message': { type: 'message', id: '0_message' },
+                '1': { type: 'signal', id: '1' },
             },
             outlets: {
                 '0': { type: 'signal', id: '0' },
             },
-        })
-    };
-    // ------------------------------- node implementation ------------------------------ //
-    const variableNames$A = generateVariableNamesNodeType('clip_t');
-    const nodeImplementation$B = {
-        initialization: ({ node: { args }, state }) => ast$1 `
-            ${ConstVar$1(variableNames$A.stateClass, state, `{
-                minValue: ${args.minValue},
-                maxValue: ${args.maxValue},
-            }`)}
-        `,
-        inlineLoop: ({ ins, state }) => ast$1 `Math.max(Math.min(${state}.maxValue, ${ins.$0}), ${state}.minValue)`,
-        messageReceivers: ({ state }) => ({
-            '1': coldFloatInlet(`${state}.minValue`),
-            '2': coldFloatInlet(`${state}.maxValue`),
         }),
+        configureMessageToSignalConnection: (inletId) => {
+            if (inletId === '0') {
+                return { reroutedMessageInletId: '0_message' };
+            }
+            return undefined;
+        },
+    };
+    // ------------------------------- generateDeclarations ------------------------------ //
+    const variableNames$A = generateVariableNamesNodeType('samphold_t');
+    const nodeCore$q = () => Sequence$1([
+        Class$1(variableNames$A.stateClass, [
+            Var$1('Float', 'signalMemory'),
+            Var$1('Float', 'controlMemory'),
+        ]),
+    ]);
+    const initialization$p = ({ node: { args }, state }) => ast$1 `
+        ${ConstVar$1(variableNames$A.stateClass, state, `{
+            signalMemory: 0,
+            controlMemory: 0,
+        }`)}
+    `;
+    // ------------------------------- loop ------------------------------ //
+    const loop$8 = ({ ins, outs, state }) => ast$1 `
+    ${state}.signalMemory = ${outs.$0} = ${ins.$1} < ${state}.controlMemory ? ${ins.$0}: ${state}.signalMemory
+    ${state}.controlMemory = ${ins.$1}
+`;
+    // ------------------------------- messageReceivers ------------------------------ //
+    const messageReceivers$q = ({ state, globs }) => ({
+        '0_message': AnonFunc$1([Var$1('Message', 'm')], 'void') `
+        if (
+            msg_isMatching(m, [MSG_STRING_TOKEN, MSG_FLOAT_TOKEN])
+            && msg_readStringToken(m, 0) === 'set'
+        ) {
+            ${state}.signalMemory = msg_readFloatToken(m, 1)
+            return
+
+        } else if (
+            msg_isMatching(m, [MSG_STRING_TOKEN, MSG_FLOAT_TOKEN])
+            && msg_readStringToken(m, 0) === 'reset'
+        ) {
+            ${state}.controlMemory = msg_readFloatToken(m, 1)
+            return
+
+        } else if (
+            msg_isMatching(m, [MSG_STRING_TOKEN])
+            && msg_readStringToken(m, 0) === 'reset'
+        ) {
+            ${state}.controlMemory = 1e20
+            return
+        }
+    `,
+    });
+    // ------------------------------------------------------------------- //
+    const nodeImplementation$B = {
+        loop: loop$8,
+        messageReceivers: messageReceivers$q,
+        initialization: initialization$p,
         dependencies: [
-            () => Sequence$1([
-                Class$1(variableNames$A.stateClass, [
-                    Var$1('Float', 'minValue'),
-                    Var$1('Float', 'maxValue'),
-                ]),
-            ])
-        ],
+            nodeCore$q,
+        ]
     };
 
     /*
@@ -12061,100 +12506,6 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
             inlets: {
                 '0': { type: 'signal', id: '0' },
                 '0_message': { type: 'message', id: '0_message' },
-                '1': { type: 'signal', id: '1' },
-            },
-            outlets: {
-                '0': { type: 'signal', id: '0' },
-            },
-        }),
-        configureMessageToSignalConnection: (inletId) => {
-            if (inletId === '0') {
-                return { reroutedMessageInletId: '0_message' };
-            }
-            return undefined;
-        },
-    };
-    // ------------------------------- generateDeclarations ------------------------------ //
-    const variableNames$z = generateVariableNamesNodeType('samphold_t');
-    const nodeCore$t = () => Sequence$1([
-        Class$1(variableNames$z.stateClass, [
-            Var$1('Float', 'signalMemory'),
-            Var$1('Float', 'controlMemory'),
-        ]),
-    ]);
-    const initialization$s = ({ node: { args }, state }) => ast$1 `
-        ${ConstVar$1(variableNames$z.stateClass, state, `{
-            signalMemory: 0,
-            controlMemory: 0,
-        }`)}
-    `;
-    // ------------------------------- loop ------------------------------ //
-    const loop$9 = ({ ins, outs, state }) => ast$1 `
-    ${state}.signalMemory = ${outs.$0} = ${ins.$1} < ${state}.controlMemory ? ${ins.$0}: ${state}.signalMemory
-    ${state}.controlMemory = ${ins.$1}
-`;
-    // ------------------------------- messageReceivers ------------------------------ //
-    const messageReceivers$t = ({ state, globs }) => ({
-        '0_message': AnonFunc$1([Var$1('Message', 'm')], 'void') `
-        if (
-            msg_isMatching(m, [MSG_STRING_TOKEN, MSG_FLOAT_TOKEN])
-            && msg_readStringToken(m, 0) === 'set'
-        ) {
-            ${state}.signalMemory = msg_readFloatToken(m, 1)
-            return
-
-        } else if (
-            msg_isMatching(m, [MSG_STRING_TOKEN, MSG_FLOAT_TOKEN])
-            && msg_readStringToken(m, 0) === 'reset'
-        ) {
-            ${state}.controlMemory = msg_readFloatToken(m, 1)
-            return
-
-        } else if (
-            msg_isMatching(m, [MSG_STRING_TOKEN])
-            && msg_readStringToken(m, 0) === 'reset'
-        ) {
-            ${state}.controlMemory = 1e20
-            return
-        }
-    `,
-    });
-    // ------------------------------------------------------------------- //
-    const nodeImplementation$A = {
-        loop: loop$9,
-        messageReceivers: messageReceivers$t,
-        initialization: initialization$s,
-        dependencies: [
-            nodeCore$t,
-        ]
-    };
-
-    /*
-     * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.
-     *
-     * This file is part of WebPd
-     * (see https://github.com/sebpiq/WebPd).
-     *
-     * This program is free software: you can redistribute it and/or modify
-     * it under the terms of the GNU Lesser General Public License as published by
-     * the Free Software Foundation, either version 3 of the License, or
-     * (at your option) any later version.
-     *
-     * This program is distributed in the hope that it will be useful,
-     * but WITHOUT ANY WARRANTY; without even the implied warranty of
-     * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-     * GNU Lesser General Public License for more details.
-     *
-     * You should have received a copy of the GNU Lesser General Public License
-     * along with this program. If not, see <http://www.gnu.org/licenses/>.
-     */
-    // ------------------------------- node builder ------------------------------ //
-    const builder$G = {
-        translateArgs: () => ({}),
-        build: () => ({
-            inlets: {
-                '0': { type: 'signal', id: '0' },
-                '0_message': { type: 'message', id: '0_message' },
             },
             outlets: {
                 '0': { type: 'message', id: '0' },
@@ -12169,23 +12520,23 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         },
     };
     // ------------------------------- generateDeclarations ------------------------------ //
-    const variableNames$y = generateVariableNamesNodeType('snapshot_t');
-    const nodeCore$s = () => Sequence$1([
-        Class$1(variableNames$y.stateClass, [
+    const variableNames$z = generateVariableNamesNodeType('snapshot_t');
+    const nodeCore$p = () => Sequence$1([
+        Class$1(variableNames$z.stateClass, [
             Var$1('Float', 'currentValue')
         ]),
     ]);
-    const initialization$r = ({ state }) => ast$1 `
-        ${ConstVar$1(variableNames$y.stateClass, state, `{
+    const initialization$o = ({ state }) => ast$1 `
+        ${ConstVar$1(variableNames$z.stateClass, state, `{
             currentValue: 0
         }`)}
     `;
     // ------------------------------- loop ------------------------------ //
-    const loop$8 = ({ ins, state }) => ast$1 `
+    const loop$7 = ({ ins, state }) => ast$1 `
     ${state}.currentValue = ${ins.$0}
 `;
     // ------------------------------- messageReceivers ------------------------------ //
-    const messageReceivers$s = ({ state, snds }) => ({
+    const messageReceivers$p = ({ state, snds }) => ({
         '0_message': AnonFunc$1([Var$1('Message', 'm')], 'void') `
         if (msg_isBang(m)) {
             ${snds.$0}(msg_floats([${state}.currentValue]))
@@ -12194,13 +12545,13 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
     `,
     });
     // ------------------------------------------------------------------- //
-    const nodeImplementation$z = {
-        loop: loop$8,
-        messageReceivers: messageReceivers$s,
-        initialization: initialization$r,
+    const nodeImplementation$A = {
+        loop: loop$7,
+        messageReceivers: messageReceivers$p,
+        initialization: initialization$o,
         dependencies: [
             bangUtils,
-            nodeCore$s,
+            nodeCore$p,
         ]
     };
 
@@ -12480,7 +12831,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      * along with this program. If not, see <http://www.gnu.org/licenses/>.
      */
     // ------------------------------- node builder ------------------------------ //
-    const builder$F = {
+    const builder$G = {
         translateArgs: () => ({}),
         build: () => ({
             inlets: {
@@ -12494,21 +12845,21 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         }),
     };
     // ------------------------------- generateDeclarations ------------------------------ //
-    const variableNames$x = generateVariableNamesNodeType('vline_t', [
+    const variableNames$y = generateVariableNamesNodeType('vline_t', [
         'setNewLine',
         'setNextDuration',
         'setNextDelay',
     ]);
-    const nodeCore$r = ({ globs }) => Sequence$1([
-        Class$1(variableNames$x.stateClass, [
+    const nodeCore$o = ({ globs }) => Sequence$1([
+        Class$1(variableNames$y.stateClass, [
             Var$1('Array<Point>', 'points'),
             Var$1('Array<LineSegment>', 'lineSegments'),
             Var$1('Float', 'currentValue'),
             Var$1('Float', 'nextDurationSamp'),
             Var$1('Float', 'nextDelaySamp'),
         ]),
-        Func$1(variableNames$x.setNewLine, [
-            Var$1(variableNames$x.stateClass, 'state'),
+        Func$1(variableNames$y.setNewLine, [
+            Var$1(variableNames$y.stateClass, 'state'),
             Var$1('Float', 'targetValue'),
         ], 'void') `
         state.points = removePointsBeforeFrame(state.points, toFloat(${globs.frame}))
@@ -12529,21 +12880,21 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         state.nextDurationSamp = 0
         state.nextDelaySamp = 0
     `,
-        Func$1(variableNames$x.setNextDuration, [
-            Var$1(variableNames$x.stateClass, 'state'),
+        Func$1(variableNames$y.setNextDuration, [
+            Var$1(variableNames$y.stateClass, 'state'),
             Var$1('Float', 'durationMsec'),
         ], 'void') `
         state.nextDurationSamp = computeUnitInSamples(${globs.sampleRate}, durationMsec, 'msec')
     `,
-        Func$1(variableNames$x.setNextDelay, [
-            Var$1(variableNames$x.stateClass, 'state'),
+        Func$1(variableNames$y.setNextDelay, [
+            Var$1(variableNames$y.stateClass, 'state'),
             Var$1('Float', 'delayMsec'),
         ], 'void') `
         state.nextDelaySamp = computeUnitInSamples(${globs.sampleRate}, delayMsec, 'msec')
     `,
     ]);
-    const initialization$q = ({ state }) => ast$1 `
-        ${ConstVar$1(variableNames$x.stateClass, state, `{
+    const initialization$n = ({ state }) => ast$1 `
+        ${ConstVar$1(variableNames$y.stateClass, state, `{
             points: [],
             lineSegments: [],
             currentValue: 0,
@@ -12552,7 +12903,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         }`)}
     `;
     // ------------------------------- loop ------------------------------ //
-    const loop$7 = ({ outs, state, globs }) => ast$1 `
+    const loop$6 = ({ outs, state, globs }) => ast$1 `
     if (${state}.lineSegments.length) {
         if (toFloat(${globs.frame}) < ${state}.lineSegments[0].p0.x) {
 
@@ -12572,7 +12923,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
     ${outs.$0} = ${state}.currentValue
 `;
     // ------------------------------- messageReceivers ------------------------------ //
-    const messageReceivers$r = ({ state }) => ({
+    const messageReceivers$o = ({ state }) => ({
         '0': AnonFunc$1([Var$1('Message', 'm')]) `
     if (
         msg_isMatching(m, [MSG_FLOAT_TOKEN])
@@ -12581,11 +12932,11 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
     ) {
         switch (msg_getLength(m)) {
             case 3:
-                ${variableNames$x.setNextDelay}(${state}, msg_readFloatToken(m, 2))
+                ${variableNames$y.setNextDelay}(${state}, msg_readFloatToken(m, 2))
             case 2:
-                ${variableNames$x.setNextDuration}(${state}, msg_readFloatToken(m, 1))
+                ${variableNames$y.setNextDuration}(${state}, msg_readFloatToken(m, 1))
             case 1:
-                ${variableNames$x.setNewLine}(${state}, msg_readFloatToken(m, 0))
+                ${variableNames$y.setNewLine}(${state}, msg_readFloatToken(m, 0))
         }
         return
 
@@ -12595,19 +12946,19 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         return
     }
     `,
-        '1': coldFloatInletWithSetter(variableNames$x.setNextDuration, state),
-        '2': coldFloatInletWithSetter(variableNames$x.setNextDelay, state),
+        '1': coldFloatInletWithSetter(variableNames$y.setNextDuration, state),
+        '2': coldFloatInletWithSetter(variableNames$y.setNextDelay, state),
     });
     // ------------------------------------------------------------------- //
-    const nodeImplementation$y = {
-        loop: loop$7,
-        messageReceivers: messageReceivers$r,
-        initialization: initialization$q,
+    const nodeImplementation$z = {
+        loop: loop$6,
+        messageReceivers: messageReceivers$o,
+        initialization: initialization$n,
         dependencies: [
             linesUtils,
             computeUnitInSamples,
             stringMsgUtils,
-            nodeCore$r,
+            nodeCore$o,
         ]
     };
 
@@ -12631,7 +12982,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      * along with this program. If not, see <http://www.gnu.org/licenses/>.
      */
     // ------------------------------- node builder ------------------------------ //
-    const builder$E = {
+    const builder$F = {
         translateArgs: ({ args }) => ({
             initValue: assertOptionalNumber(args[0]) || 0,
         }),
@@ -12646,32 +12997,32 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         }),
     };
     // ------------------------------- generateDeclarations ------------------------------ //
-    const variableNames$w = generateVariableNamesNodeType('line_t', [
+    const variableNames$x = generateVariableNamesNodeType('line_t', [
         'defaultLine',
         'setNewLine',
         'setNextDuration',
         'stop',
     ]);
-    const nodeCore$q = ({ globs }) => Sequence$1([
-        Class$1(variableNames$w.stateClass, [
+    const nodeCore$n = ({ globs }) => Sequence$1([
+        Class$1(variableNames$x.stateClass, [
             Var$1('LineSegment', 'currentLine'),
             Var$1('Float', 'currentValue'),
             Var$1('Float', 'nextDurationSamp'),
         ]),
-        ConstVar$1('LineSegment', variableNames$w.defaultLine, `{
+        ConstVar$1('LineSegment', variableNames$x.defaultLine, `{
         p0: {x: -1, y: 0},
         p1: {x: -1, y: 0},
         dx: 1,
         dy: 0,
     }`),
-        Func$1(variableNames$w.setNewLine, [
-            Var$1(variableNames$w.stateClass, 'state'),
+        Func$1(variableNames$x.setNewLine, [
+            Var$1(variableNames$x.stateClass, 'state'),
             Var$1('Float', 'targetValue'),
         ], 'void') `
         ${ConstVar$1('Float', 'startFrame', `toFloat(${globs.frame})`)}
         ${ConstVar$1('Float', 'endFrame', `toFloat(${globs.frame}) + state.nextDurationSamp`)}
         if (endFrame === toFloat(${globs.frame})) {
-            state.currentLine = ${variableNames$w.defaultLine}
+            state.currentLine = ${variableNames$x.defaultLine}
             state.currentValue = targetValue
             state.nextDurationSamp = 0
         } else {
@@ -12691,28 +13042,28 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
             state.nextDurationSamp = 0
         }
     `,
-        Func$1(variableNames$w.setNextDuration, [
-            Var$1(variableNames$w.stateClass, 'state'),
+        Func$1(variableNames$x.setNextDuration, [
+            Var$1(variableNames$x.stateClass, 'state'),
             Var$1('Float', 'durationMsec'),
         ], 'void') `
         state.nextDurationSamp = computeUnitInSamples(${globs.sampleRate}, durationMsec, 'msec')
     `,
-        Func$1(variableNames$w.stop, [
-            Var$1(variableNames$w.stateClass, 'state'),
+        Func$1(variableNames$x.stop, [
+            Var$1(variableNames$x.stateClass, 'state'),
         ], 'void') `
         state.currentLine.p1.x = -1
         state.currentLine.p1.y = state.currentValue
     `
     ]);
-    const initialization$p = ({ state, node: { args } }) => ast$1 `
-        ${ConstVar$1(variableNames$w.stateClass, state, `{
-            currentLine: ${variableNames$w.defaultLine},
+    const initialization$m = ({ state, node: { args } }) => ast$1 `
+        ${ConstVar$1(variableNames$x.stateClass, state, `{
+            currentLine: ${variableNames$x.defaultLine},
             currentValue: ${args.initValue},
             nextDurationSamp: 0,
         }`)}
     `;
     // ------------------------------- messageReceivers ------------------------------ //
-    const messageReceivers$q = ({ state }) => ({
+    const messageReceivers$n = ({ state }) => ({
         '0': AnonFunc$1([Var$1('Message', 'm')]) `
         if (
             msg_isMatching(m, [MSG_FLOAT_TOKEN])
@@ -12720,22 +13071,22 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         ) {
             switch (msg_getLength(m)) {
                 case 2:
-                    ${variableNames$w.setNextDuration}(${state}, msg_readFloatToken(m, 1))
+                    ${variableNames$x.setNextDuration}(${state}, msg_readFloatToken(m, 1))
                 case 1:
-                    ${variableNames$w.setNewLine}(${state}, msg_readFloatToken(m, 0))
+                    ${variableNames$x.setNewLine}(${state}, msg_readFloatToken(m, 0))
             }
             return
 
         } else if (msg_isAction(m, 'stop')) {
-            ${variableNames$w.stop}(${state})
+            ${variableNames$x.stop}(${state})
             return
 
         }
     `,
-        '1': coldFloatInletWithSetter(variableNames$w.setNextDuration, state),
+        '1': coldFloatInletWithSetter(variableNames$x.setNextDuration, state),
     });
     // ------------------------------- loop ------------------------------ //
-    const loop$6 = ({ outs, state, globs }) => ast$1 `
+    const loop$5 = ({ outs, state, globs }) => ast$1 `
     ${outs.$0} = ${state}.currentValue
     if (toFloat(${globs.frame}) < ${state}.currentLine.p1.x) {
         ${state}.currentValue += ${state}.currentLine.dy
@@ -12745,11 +13096,11 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
     }
 `;
     // ------------------------------------------------------------------- //
-    const nodeImplementation$x = {
-        initialization: initialization$p,
-        messageReceivers: messageReceivers$q,
-        loop: loop$6,
-        dependencies: [stringMsgUtils, computeUnitInSamples, linesUtils, nodeCore$q],
+    const nodeImplementation$y = {
+        initialization: initialization$m,
+        messageReceivers: messageReceivers$n,
+        loop: loop$5,
+        dependencies: [stringMsgUtils, computeUnitInSamples, linesUtils, nodeCore$n],
     };
 
     /*
@@ -12773,7 +13124,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      */
     const MIN_GRAIN_MSEC = 20;
     // ------------------------------- node builder ------------------------------ //
-    const builder$D = {
+    const builder$E = {
         translateArgs: ({ args }) => ({
             initValue: assertOptionalNumber(args[0]) || 0,
             timeGrainMsec: Math.max(assertOptionalNumber(args[1]) || MIN_GRAIN_MSEC, MIN_GRAIN_MSEC),
@@ -12791,7 +13142,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         }),
     };
     // ------------------------------- generateDeclarations ------------------------------ //
-    const variableNames$v = generateVariableNamesNodeType('line', [
+    const variableNames$w = generateVariableNamesNodeType('line', [
         'setNewLine',
         'setNextDuration',
         'setGrain',
@@ -12801,8 +13152,8 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         'tick',
         'scheduleNextTick',
     ]);
-    const nodeCore$p = ({ globs }) => Sequence$1([
-        Class$1(variableNames$v.stateClass, [
+    const nodeCore$m = ({ globs }) => Sequence$1([
+        Class$1(variableNames$w.stateClass, [
             Var$1('LineSegment', 'currentLine'),
             Var$1('Float', 'currentValue'),
             Var$1('Float', 'nextSamp'),
@@ -12813,8 +13164,8 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
             Var$1('(m: Message) => void', 'snd0'),
             Var$1('SkedCallback', 'tickCallback'),
         ]),
-        Func$1(variableNames$v.setNewLine, [
-            Var$1(variableNames$v.stateClass, 'state'),
+        Func$1(variableNames$w.setNewLine, [
+            Var$1(variableNames$w.stateClass, 'state'),
             Var$1('Float', 'targetValue'),
         ], 'void') `
         state.currentLine = {
@@ -12831,39 +13182,39 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         state.nextDurationSamp = 0
         state.currentLine.dy = computeSlope(state.currentLine.p0, state.currentLine.p1) * state.grainSamp
     `,
-        Func$1(variableNames$v.setNextDuration, [
-            Var$1(variableNames$v.stateClass, 'state'),
+        Func$1(variableNames$w.setNextDuration, [
+            Var$1(variableNames$w.stateClass, 'state'),
             Var$1('Float', 'durationMsec'),
         ], 'void') `
         state.nextDurationSamp = computeUnitInSamples(${globs.sampleRate}, durationMsec, 'msec')
     `,
-        Func$1(variableNames$v.setGrain, [
-            Var$1(variableNames$v.stateClass, 'state'),
+        Func$1(variableNames$w.setGrain, [
+            Var$1(variableNames$w.stateClass, 'state'),
             Var$1('Float', 'grainMsec'),
         ], 'void') `
         state.grainSamp = computeUnitInSamples(${globs.sampleRate}, Math.max(grainMsec, ${MIN_GRAIN_MSEC}), 'msec')
     `,
-        Func$1(variableNames$v.stopCurrentLine, [
-            Var$1(variableNames$v.stateClass, 'state'),
+        Func$1(variableNames$w.stopCurrentLine, [
+            Var$1(variableNames$w.stateClass, 'state'),
         ], 'void') `
         if (state.skedId !== SKED_ID_NULL) {
             commons_cancelWaitFrame(state.skedId)
             state.skedId = SKED_ID_NULL
         }
         if (${globs.frame} < state.nextSampInt) {
-            ${variableNames$v.incrementTime}(state, -1 * (state.nextSamp - toFloat(${globs.frame})))
+            ${variableNames$w.incrementTime}(state, -1 * (state.nextSamp - toFloat(${globs.frame})))
         }
-        ${variableNames$v.setNextSamp}(state, -1)
+        ${variableNames$w.setNextSamp}(state, -1)
     `,
-        Func$1(variableNames$v.setNextSamp, [
-            Var$1(variableNames$v.stateClass, 'state'),
+        Func$1(variableNames$w.setNextSamp, [
+            Var$1(variableNames$w.stateClass, 'state'),
             Var$1('Float', 'currentSamp'),
         ], 'void') `
         state.nextSamp = currentSamp
         state.nextSampInt = toInt(Math.round(currentSamp))
     `,
-        Func$1(variableNames$v.incrementTime, [
-            Var$1(variableNames$v.stateClass, 'state'),
+        Func$1(variableNames$w.incrementTime, [
+            Var$1(variableNames$w.stateClass, 'state'),
             Var$1('Float', 'incrementSamp'),
         ], 'void') `
         if (incrementSamp === state.currentLine.dx) {
@@ -12875,31 +13226,31 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
                 {x: state.currentLine.dx, y: state.currentLine.dy},
             )
         }
-        ${variableNames$v.setNextSamp}(
+        ${variableNames$w.setNextSamp}(
             state, 
             (state.nextSamp !== -1 ? state.nextSamp: toFloat(${globs.frame})) + incrementSamp
         )
     `,
-        Func$1(variableNames$v.tick, [
-            Var$1(variableNames$v.stateClass, 'state'),
+        Func$1(variableNames$w.tick, [
+            Var$1(variableNames$w.stateClass, 'state'),
         ], 'void') `
         state.snd0(msg_floats([state.currentValue]))
         if (toFloat(${globs.frame}) >= state.currentLine.p1.x) {
             state.currentValue = state.currentLine.p1.y
-            ${variableNames$v.stopCurrentLine}(state)
+            ${variableNames$w.stopCurrentLine}(state)
         } else {
-            ${variableNames$v.incrementTime}(state, state.currentLine.dx)
-            ${variableNames$v.scheduleNextTick}(state)
+            ${variableNames$w.incrementTime}(state, state.currentLine.dx)
+            ${variableNames$w.scheduleNextTick}(state)
         }
     `,
-        Func$1(variableNames$v.scheduleNextTick, [
-            Var$1(variableNames$v.stateClass, 'state'),
+        Func$1(variableNames$w.scheduleNextTick, [
+            Var$1(variableNames$w.stateClass, 'state'),
         ], 'void') `
         state.skedId = commons_waitFrame(state.nextSampInt, state.tickCallback)
     `
     ]);
-    const initialization$o = ({ node: { args, id }, state, snds }) => ast$1 `
-        ${ConstVar$1(variableNames$v.stateClass, state, ast$1 `{
+    const initialization$l = ({ node: { args, id }, state, snds }) => ast$1 `
+        ${ConstVar$1(variableNames$w.stateClass, state, ast$1 `{
             currentLine: {
                 p0: {x: -1, y: 0},
                 p1: {x: -1, y: 0},
@@ -12917,26 +13268,26 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         }`)}
 
         commons_waitEngineConfigure(() => {
-            ${variableNames$v.setGrain}(${state}, ${args.timeGrainMsec})
+            ${variableNames$w.setGrain}(${state}, ${args.timeGrainMsec})
             ${state}.tickCallback = ${AnonFunc$1() `
-                ${variableNames$v.tick}(${state})
+                ${variableNames$w.tick}(${state})
             `}
         })
     `;
     // ------------------------------- messageReceivers ------------------------------ //
-    const messageReceivers$p = ({ snds, state, }) => ({
+    const messageReceivers$m = ({ snds, state, }) => ({
         '0': AnonFunc$1([Var$1('Message', 'm')]) `
         if (
             msg_isMatching(m, [MSG_FLOAT_TOKEN])
             || msg_isMatching(m, [MSG_FLOAT_TOKEN, MSG_FLOAT_TOKEN])
             || msg_isMatching(m, [MSG_FLOAT_TOKEN, MSG_FLOAT_TOKEN, MSG_FLOAT_TOKEN])
         ) {
-            ${variableNames$v.stopCurrentLine}(${state})
+            ${variableNames$w.stopCurrentLine}(${state})
             switch (msg_getLength(m)) {
                 case 3:
-                    ${variableNames$v.setGrain}(${state}, msg_readFloatToken(m, 2))
+                    ${variableNames$w.setGrain}(${state}, msg_readFloatToken(m, 2))
                 case 2:
-                    ${variableNames$v.setNextDuration}(${state}, msg_readFloatToken(m, 1))
+                    ${variableNames$w.setNextDuration}(${state}, msg_readFloatToken(m, 1))
                 case 1:
                     ${ConstVar$1('Float', 'targetValue', 'msg_readFloatToken(m, 0)')}
                     if (${state}.nextDurationSamp === 0) {
@@ -12944,41 +13295,41 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
                         ${snds.$0}(msg_floats([targetValue]))
                     } else {
                         ${snds.$0}(msg_floats([${state}.currentValue]))
-                        ${variableNames$v.setNewLine}(${state}, targetValue)
-                        ${variableNames$v.incrementTime}(${state}, ${state}.currentLine.dx)
-                        ${variableNames$v.scheduleNextTick}(${state})
+                        ${variableNames$w.setNewLine}(${state}, targetValue)
+                        ${variableNames$w.incrementTime}(${state}, ${state}.currentLine.dx)
+                        ${variableNames$w.scheduleNextTick}(${state})
                     }
                     
             }
             return
 
         } else if (msg_isAction(m, 'stop')) {
-            ${variableNames$v.stopCurrentLine}(${state})
+            ${variableNames$w.stopCurrentLine}(${state})
             return
 
         } else if (
             msg_isMatching(m, [MSG_STRING_TOKEN, MSG_FLOAT_TOKEN])
             && msg_readStringToken(m, 0) === 'set'
         ) {
-            ${variableNames$v.stopCurrentLine}(${state})
+            ${variableNames$w.stopCurrentLine}(${state})
             ${state}.currentValue = msg_readFloatToken(m, 1)
             return
         }
     `,
-        '1': coldFloatInletWithSetter(variableNames$v.setNextDuration, state),
-        '2': coldFloatInletWithSetter(variableNames$v.setGrain, state),
+        '1': coldFloatInletWithSetter(variableNames$w.setNextDuration, state),
+        '2': coldFloatInletWithSetter(variableNames$w.setGrain, state),
     });
     // ------------------------------------------------------------------- //
-    const nodeImplementation$w = {
-        initialization: initialization$o,
-        messageReceivers: messageReceivers$p,
+    const nodeImplementation$x = {
+        initialization: initialization$l,
+        messageReceivers: messageReceivers$m,
         dependencies: [
             stringMsgUtils,
             computeUnitInSamples,
             linesUtils,
             commonsWaitEngineConfigure,
             commonsWaitFrame,
-            nodeCore$p
+            nodeCore$m
         ],
     };
 
@@ -13025,7 +13376,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      * along with this program. If not, see <http://www.gnu.org/licenses/>.
      */
     // ------------------------------- node builder ------------------------------ //
-    const builder$C = {
+    const builder$D = {
         translateArgs: () => ({}),
         build: () => ({
             inlets: {
@@ -13046,12 +13397,12 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         'ftom~': { inlineLoop: ({ ins }) => ast$1 `ftom(${ins.$0})`, dependencies: [ftom] },
     };
     const builders$c = {
-        'abs~': builder$C,
-        'cos~': builder$C,
-        'wrap~': builder$C,
-        'sqrt~': builder$C,
-        'mtof~': builder$C,
-        'ftom~': builder$C,
+        'abs~': builder$D,
+        'cos~': builder$D,
+        'wrap~': builder$D,
+        'sqrt~': builder$D,
+        'mtof~': builder$D,
+        'ftom~': builder$D,
     };
 
     /*
@@ -13080,8 +13431,10 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         'setArrayName',
         'createState',
         'prepareIndex',
+        'emptyArray',
     ]);
     const nodeCoreTabBase = () => Sequence$1([
+        ConstVar$1('FloatArray', variableNamesTabBase.emptyArray, 'createFloatArray(1)'),
         Class$1(variableNamesTabBase.stateClass, [
             Var$1('FloatArray', 'array'),
             Var$1('string', 'arrayName'),
@@ -13094,7 +13447,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
             Var$1('string', 'arrayName'),
         ], variableNamesTabBase.stateClass) `
         return {
-            array: createFloatArray(0),
+            array: ${variableNamesTabBase.emptyArray},
             arrayName,
             arrayChangesSubscription: SKED_ID_NULL,
             readPosition: 0,
@@ -13111,7 +13464,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
             commons_cancelArrayChangesSubscription(state.arrayChangesSubscription)
         }
         state.arrayName = arrayName
-        state.array = createFloatArray(0)
+        state.array = ${variableNamesTabBase.emptyArray}
         commons_subscribeArrayChanges(arrayName, callback)
     `,
         Func$1(variableNamesTabBase.prepareIndex, [
@@ -13146,7 +13499,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      * along with this program. If not, see <http://www.gnu.org/licenses/>.
      */
     // ------------------------------- node builder ------------------------------ //
-    const builder$B = {
+    const builder$C = {
         translateArgs: translateArgsTabBase,
         build: () => ({
             inlets: {
@@ -13157,18 +13510,12 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
             },
         }),
     };
-    // ------------------------------ generateDeclarations ------------------------------ //
-    const variableNames$u = generateVariableNamesNodeType('tabread', [
+    // ------------------------------ node implementation ------------------------------ //
+    const variableNames$v = generateVariableNamesNodeType('tabread', [
         'setArrayNameFinalize',
     ]);
-    const nodeCore$o = () => Sequence$1([
-        Func$1(variableNames$u.setArrayNameFinalize, [
-            Var$1(variableNamesTabBase.stateClass, 'state'),
-        ], 'void') `
-        state.array = commons_getArray(state.arrayName)
-    `,
-    ]);
-    const initialization$n = ({ node: { args }, state }) => ast$1 `
+    const nodeImplementation$w = {
+        initialization: ({ node: { args }, state }) => ast$1 `
         ${ConstVar$1(variableNamesTabBase.stateClass, state, `${variableNamesTabBase.createState}("${args.arrayName}")`)}
 
         commons_waitEngineConfigure(() => {
@@ -13176,54 +13523,55 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
                 ${variableNamesTabBase.setArrayName}(
                     ${state}, 
                     ${state}.arrayName,
-                    () => ${variableNames$u.setArrayNameFinalize}(${state})
+                    () => ${variableNames$v.setArrayNameFinalize}(${state})
                 )
             }
         })
-    `;
-    // ------------------------------- messageReceivers ------------------------------ //
-    const messageReceivers$o = (context) => {
-        const { snds, state } = context;
-        return {
-            '0': AnonFunc$1([Var$1('Message', 'm')]) `
-            if (msg_isMatching(m, [MSG_FLOAT_TOKEN])) {        
-                if (${state}.array.length === 0) {
-                    ${snds.$0}(msg_floats([0]))
+    `,
+        messageReceivers: (context) => {
+            const { snds, state } = context;
+            return {
+                '0': AnonFunc$1([Var$1('Message', 'm')]) `
+                if (msg_isMatching(m, [MSG_FLOAT_TOKEN])) {        
+                    if (${state}.array.length === 0) {
+                        ${snds.$0}(msg_floats([0]))
 
-                } else {
-                    ${snds.$0}(msg_floats([${state}.array[
-                        ${variableNamesTabBase.prepareIndex}(
-                            msg_readFloatToken(m, 0), 
-                            ${state}.array.length
-                        )
-                    ]]))
+                    } else {
+                        ${snds.$0}(msg_floats([${state}.array[
+                            ${variableNamesTabBase.prepareIndex}(
+                                msg_readFloatToken(m, 0), 
+                                ${state}.array.length
+                            )
+                        ]]))
+                    }
+                    return 
+
+                } else if (
+                    msg_isMatching(m, [MSG_STRING_TOKEN, MSG_STRING_TOKEN])
+                    && msg_readStringToken(m, 0) === 'set'
+                ) {
+                    ${variableNamesTabBase.setArrayName}(
+                        ${state}, 
+                        msg_readStringToken(m, 1),
+                        () => ${variableNames$v.setArrayNameFinalize}(${state})
+                    )
+                    return
+            
                 }
-                return 
-
-            } else if (
-                msg_isMatching(m, [MSG_STRING_TOKEN, MSG_STRING_TOKEN])
-                && msg_readStringToken(m, 0) === 'set'
-            ) {
-                ${variableNamesTabBase.setArrayName}(
-                    ${state}, 
-                    msg_readStringToken(m, 1),
-                    () => ${variableNames$u.setArrayNameFinalize}(${state})
-                )
-                return
-        
-            }
-        `,
-        };
-    };
-    // ------------------------------------------------------------------- //
-    const nodeImplementation$v = {
-        initialization: initialization$n,
-        messageReceivers: messageReceivers$o,
+            `,
+            };
+        },
         dependencies: [
             commonsWaitEngineConfigure,
             commonsArrays,
             nodeCoreTabBase,
-            nodeCore$o,
+            () => Sequence$1([
+                Func$1(variableNames$v.setArrayNameFinalize, [
+                    Var$1(variableNamesTabBase.stateClass, 'state'),
+                ], 'void') `
+                state.array = commons_getArray(state.arrayName)
+            `,
+            ]),
         ]
     };
 
@@ -13247,7 +13595,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      * along with this program. If not, see <http://www.gnu.org/licenses/>.
      */
     // ------------------------------- node builder ------------------------------ //
-    const builder$A = {
+    const builder$B = {
         translateArgs: translateArgsTabBase,
         build: () => ({
             inlets: {
@@ -13258,24 +13606,120 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         }),
     };
     // ------------------------------ generateDeclarations ------------------------------ //
-    const variableNames$t = generateVariableNamesNodeType('tabwrite', [
+    const variableNames$u = generateVariableNamesNodeType('tabwrite', [
         'setArrayNameFinalize',
         'setWritePosition',
     ]);
-    const nodeCore$n = () => Sequence$1([
-        Func$1(variableNames$t.setArrayNameFinalize, [
-            Var$1(variableNamesTabBase.stateClass, 'state'),
-        ], 'void') `
-        state.array = commons_getArray(state.arrayName)
+    const nodeImplementation$v = {
+        initialization: ({ node: { args }, state }) => ast$1 `
+        ${ConstVar$1(variableNamesTabBase.stateClass, state, `${variableNamesTabBase.createState}("${args.arrayName}")`)}
+
+        commons_waitEngineConfigure(() => {
+            if (${state}.arrayName.length) {
+                ${variableNamesTabBase.setArrayName}(
+                    ${state}, 
+                    ${state}.arrayName,
+                    () => ${variableNames$u.setArrayNameFinalize}(${state})
+                )
+            }
+        })
     `,
-        Func$1(variableNames$t.setWritePosition, [
-            Var$1(variableNamesTabBase.stateClass, 'state'),
-            Var$1('Float', 'writePosition')
-        ], 'void') `
-        state.writePosition = ${variableNamesTabBase.prepareIndex}(writePosition, state.array.length)
-    `
+        messageReceivers: (context) => {
+            const { state } = context;
+            return {
+                '0': AnonFunc$1([Var$1('Message', 'm')]) `
+                if (msg_isMatching(m, [MSG_FLOAT_TOKEN])) {        
+                    if (${state}.array.length === 0) {
+                        return
+    
+                    } else {
+                        ${state}.array[${state}.writePosition] = msg_readFloatToken(m, 0)
+                        return
+                    }
+    
+                } else if (
+                    msg_isMatching(m, [MSG_STRING_TOKEN, MSG_STRING_TOKEN])
+                    && msg_readStringToken(m, 0) === 'set'
+                ) {
+                    ${variableNamesTabBase.setArrayName}(
+                        ${state}, 
+                        msg_readStringToken(m, 1),
+                        () => ${variableNames$u.setArrayNameFinalize}(${state}),
+                    )
+                    return
+            
+                }
+            `,
+                '1': coldFloatInletWithSetter(variableNames$u.setWritePosition, state)
+            };
+        },
+        dependencies: [
+            commonsWaitEngineConfigure,
+            commonsArrays,
+            nodeCoreTabBase,
+            () => Sequence$1([
+                Func$1(variableNames$u.setArrayNameFinalize, [
+                    Var$1(variableNamesTabBase.stateClass, 'state'),
+                ], 'void') `
+                state.array = commons_getArray(state.arrayName)
+            `,
+                Func$1(variableNames$u.setWritePosition, [
+                    Var$1(variableNamesTabBase.stateClass, 'state'),
+                    Var$1('Float', 'writePosition')
+                ], 'void') `
+                state.writePosition = ${variableNamesTabBase.prepareIndex}(writePosition, state.array.length)
+            `
+            ]),
+        ]
+    };
+
+    /*
+     * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.
+     *
+     * This file is part of WebPd
+     * (see https://github.com/sebpiq/WebPd).
+     *
+     * This program is free software: you can redistribute it and/or modify
+     * it under the terms of the GNU Lesser General Public License as published by
+     * the Free Software Foundation, either version 3 of the License, or
+     * (at your option) any later version.
+     *
+     * This program is distributed in the hope that it will be useful,
+     * but WITHOUT ANY WARRANTY; without even the implied warranty of
+     * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+     * GNU Lesser General Public License for more details.
+     *
+     * You should have received a copy of the GNU Lesser General Public License
+     * along with this program. If not, see <http://www.gnu.org/licenses/>.
+     */
+    // TODO : tabread4 interpolation algorithm
+    // ------------------------------- node builder ------------------------------ //
+    const builder$A = {
+        translateArgs: (pdNode) => ({
+            arrayName: assertOptionalString(pdNode.args[0]) || '',
+        }),
+        build: () => ({
+            inlets: {
+                '0': { type: 'signal', id: '0' },
+                '0_message': { type: 'message', id: '0_message' },
+            },
+            outlets: {
+                '0': { type: 'signal', id: '0' },
+            },
+        }),
+        configureMessageToSignalConnection: (inletId) => {
+            if (inletId === '0') {
+                return { reroutedMessageInletId: '0_message' };
+            }
+            return undefined;
+        },
+    };
+    // ------------------------------ node implementation ------------------------------ //
+    const variableNames$t = generateVariableNamesNodeType('tabread_t', [
+        'setArrayNameFinalize',
     ]);
-    const initialization$m = ({ node: { args }, state }) => ast$1 `
+    const nodeImplementation$u = {
+        initialization: ({ node: { args }, state }) => ast$1 `
         ${ConstVar$1(variableNamesTabBase.stateClass, state, `${variableNamesTabBase.createState}("${args.arrayName}")`)}
 
         commons_waitEngineConfigure(() => {
@@ -13287,47 +13731,46 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
                 )
             }
         })
-    `;
-    // ------------------------------- messageReceivers ------------------------------ //
-    const messageReceivers$n = (context) => {
-        const { state } = context;
-        return {
-            '0': AnonFunc$1([Var$1('Message', 'm')]) `
-            if (msg_isMatching(m, [MSG_FLOAT_TOKEN])) {        
-                if (${state}.array.length === 0) {
-                    return
-
-                } else {
-                    ${state}.array[${state}.writePosition] = msg_readFloatToken(m, 0)
-                    return
-                }
-
-            } else if (
+    `,
+        messageReceivers: ({ state }) => ({
+            '0_message': AnonFunc$1([Var$1('Message', 'm')]) `
+            if (
                 msg_isMatching(m, [MSG_STRING_TOKEN, MSG_STRING_TOKEN])
                 && msg_readStringToken(m, 0) === 'set'
             ) {
                 ${variableNamesTabBase.setArrayName}(
-                    ${state}, 
+                    ${state},
                     msg_readStringToken(m, 1),
                     () => ${variableNames$t.setArrayNameFinalize}(${state}),
                 )
                 return
-        
+    
             }
         `,
-            '1': coldFloatInletWithSetter(variableNames$t.setWritePosition, state)
-        };
-    };
-    // ------------------------------------------------------------------- //
-    const nodeImplementation$u = {
-        initialization: initialization$m,
-        messageReceivers: messageReceivers$n,
+        }),
+        inlineLoop: ({ ins, state }) => ast$1 `${state}.array[Math.max(Math.min(Math.floor(${ins.$0}), ${state}.array.length - 1), 0)]`,
         dependencies: [
+            bangUtils,
             commonsWaitEngineConfigure,
             commonsArrays,
+            stringMsgUtils,
             nodeCoreTabBase,
-            nodeCore$n,
-        ]
+            () => Sequence$1([
+                Func$1(variableNames$t.setArrayNameFinalize, [
+                    Var$1(variableNamesTabBase.stateClass, 'state'),
+                ], 'void') `
+                state.array = commons_getArray(state.arrayName)
+            `,
+            ]),
+        ],
+    };
+    const builders$b = {
+        'tabread~': builder$A,
+        'tabread4~': builder$A,
+    };
+    const nodeImplementations$b = {
+        'tabread~': nodeImplementation$u,
+        'tabread4~': nodeImplementation$u,
     };
 
     /*
@@ -13365,39 +13808,14 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
             },
         }),
     };
-    // ------------------------------ generateDeclarations ------------------------------ //
+    // ------------------------------ node implementation ------------------------------ //
     const variableNames$s = generateVariableNamesNodeType('tabplay_t', [
         'setArrayNameFinalize',
         'play',
         'stop',
     ]);
-    const nodeCore$m = () => Sequence$1([
-        Func$1(variableNames$s.setArrayNameFinalize, [
-            Var$1(variableNamesTabBase.stateClass, 'state'),
-        ], 'void') `
-        state.array = commons_getArray(state.arrayName)
-        state.readPosition = state.array.length
-        state.readUntil = state.array.length
-    `,
-        Func$1(variableNames$s.play, [
-            Var$1(variableNamesTabBase.stateClass, 'state'),
-            Var$1('Int', 'playFrom'),
-            Var$1('Int', 'playTo'),
-        ], 'void') `
-        state.readPosition = playFrom
-        state.readUntil = toInt(Math.min(
-            toFloat(playTo), 
-            toFloat(state.array.length),
-        ))
-    `,
-        Func$1(variableNames$s.stop, [
-            Var$1(variableNamesTabBase.stateClass, 'state'),
-        ], 'void') `
-        state.readPosition = 0
-        state.readUntil = 0
-    `,
-    ]);
-    const initialization$l = ({ node: { args }, state }) => ast$1 `
+    const nodeImplementation$t = {
+        initialization: ({ node: { args }, state }) => ast$1 `
         ${ConstVar$1(variableNamesTabBase.stateClass, state, `${variableNamesTabBase.createState}("${args.arrayName}")`)}
 
         commons_waitEngineConfigure(() => {
@@ -13409,72 +13827,90 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
                 )
             }
         })
-    `;
-    // ------------------------------- loop ------------------------------ //
-    const loop$5 = ({ state, snds, outs }) => ast$1 `
-    if (${state}.readPosition < ${state}.readUntil) {
-        ${outs.$0} = ${state}.array[${state}.readPosition]
-        ${state}.readPosition++
-        if (${state}.readPosition >= ${state}.readUntil) {
-            ${snds.$1}(msg_bang())
-        }
-    } else {
-        ${outs.$0} = 0
-    }
-`;
-    // ------------------------------- messageReceivers ------------------------------ //
-    const messageReceivers$m = ({ state, globs }) => ({
-        '0': AnonFunc$1([Var$1('Message', 'm')]) `
-        if (msg_isBang(m)) {
-            ${variableNames$s.play}(${state}, 0, ${state}.array.length)
-            return 
-            
-        } else if (msg_isAction(m, 'stop')) {
-            ${variableNames$s.stop}(${state})
-            return 
-
-        } else if (
-            msg_isMatching(m, [MSG_STRING_TOKEN, MSG_STRING_TOKEN])
-            && msg_readStringToken(m, 0) === 'set'
-        ) {
-            ${variableNamesTabBase.setArrayName}(
-                ${state},
-                msg_readStringToken(m, 1),
-                () => ${variableNames$s.setArrayNameFinalize}(${state}),
-            )
-            return
-
-        } else if (msg_isMatching(m, [MSG_FLOAT_TOKEN])) {
-            ${variableNames$s.play}(
-                ${state},
-                toInt(msg_readFloatToken(m, 0)), 
-                ${state}.array.length
-            )
-            return 
-
-        } else if (msg_isMatching(m, [MSG_FLOAT_TOKEN, MSG_FLOAT_TOKEN])) {
-            ${ConstVar$1('Int', 'fromSample', `toInt(msg_readFloatToken(m, 0))`)}
-            ${variableNames$s.play}(
-                ${state},
-                fromSample,
-                fromSample + toInt(msg_readFloatToken(m, 1)),
-            )
-            return
+    `,
+        messageReceivers: ({ state }) => ({
+            '0': AnonFunc$1([Var$1('Message', 'm')]) `
+            if (msg_isBang(m)) {
+                ${variableNames$s.play}(${state}, 0, ${state}.array.length)
+                return 
+                
+            } else if (msg_isAction(m, 'stop')) {
+                ${variableNames$s.stop}(${state})
+                return 
+    
+            } else if (
+                msg_isMatching(m, [MSG_STRING_TOKEN, MSG_STRING_TOKEN])
+                && msg_readStringToken(m, 0) === 'set'
+            ) {
+                ${variableNamesTabBase.setArrayName}(
+                    ${state},
+                    msg_readStringToken(m, 1),
+                    () => ${variableNames$s.setArrayNameFinalize}(${state}),
+                )
+                return
+    
+            } else if (msg_isMatching(m, [MSG_FLOAT_TOKEN])) {
+                ${variableNames$s.play}(
+                    ${state},
+                    toInt(msg_readFloatToken(m, 0)), 
+                    ${state}.array.length
+                )
+                return 
+    
+            } else if (msg_isMatching(m, [MSG_FLOAT_TOKEN, MSG_FLOAT_TOKEN])) {
+                ${ConstVar$1('Int', 'fromSample', `toInt(msg_readFloatToken(m, 0))`)}
+                ${variableNames$s.play}(
+                    ${state},
+                    fromSample,
+                    fromSample + toInt(msg_readFloatToken(m, 1)),
+                )
+                return
+            }
+        `,
+        }),
+        loop: ({ state, snds, outs }) => ast$1 `
+        if (${state}.readPosition < ${state}.readUntil) {
+            ${outs.$0} = ${state}.array[${state}.readPosition]
+            ${state}.readPosition++
+            if (${state}.readPosition >= ${state}.readUntil) {
+                ${snds.$1}(msg_bang())
+            }
+        } else {
+            ${outs.$0} = 0
         }
     `,
-    });
-    // ------------------------------------------------------------------- //
-    const nodeImplementation$t = {
-        initialization: initialization$l,
-        messageReceivers: messageReceivers$m,
-        loop: loop$5,
         dependencies: [
             bangUtils,
             commonsWaitEngineConfigure,
             commonsArrays,
             stringMsgUtils,
             nodeCoreTabBase,
-            nodeCore$m,
+            () => Sequence$1([
+                Func$1(variableNames$s.setArrayNameFinalize, [
+                    Var$1(variableNamesTabBase.stateClass, 'state'),
+                ], 'void') `
+                state.array = commons_getArray(state.arrayName)
+                state.readPosition = state.array.length
+                state.readUntil = state.array.length
+            `,
+                Func$1(variableNames$s.play, [
+                    Var$1(variableNamesTabBase.stateClass, 'state'),
+                    Var$1('Int', 'playFrom'),
+                    Var$1('Int', 'playTo'),
+                ], 'void') `
+                state.readPosition = playFrom
+                state.readUntil = toInt(Math.min(
+                    toFloat(playTo), 
+                    toFloat(state.array.length),
+                ))
+            `,
+                Func$1(variableNames$s.stop, [
+                    Var$1(variableNamesTabBase.stateClass, 'state'),
+                ], 'void') `
+                state.readPosition = 0
+                state.readUntil = 0
+            `,
+            ]),
         ],
     };
 
@@ -14066,70 +14502,6 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         ]
     };
 
-    // TODO : unit tests
-    const signalBuses = () => Sequence$1([
-        ConstVar$1('Map<string, Float>', 'SIGNAL_BUSES', 'new Map()'),
-        `SIGNAL_BUSES.set('', 0)`,
-        Func$1('addAssignSignalBus', [
-            Var$1('string', 'busName'),
-            Var$1('Float', 'value')
-        ], 'Float') `
-            ${ConstVar$1('Float', 'newValue', 'SIGNAL_BUSES.get(busName) + value')}
-            SIGNAL_BUSES.set(
-                busName,
-                newValue,
-            )
-            return newValue
-        `,
-        Func$1('setSignalBus', [
-            Var$1('string', 'busName'),
-            Var$1('Float', 'value'),
-        ], 'void') `
-            SIGNAL_BUSES.set(
-                busName,
-                value,
-            )
-        `,
-        Func$1('resetSignalBus', [
-            Var$1('string', 'busName')
-        ], 'void') `
-            SIGNAL_BUSES.set(busName, 0)
-        `,
-        Func$1('readSignalBus', [Var$1('string', 'busName')], 'Float') `
-            return SIGNAL_BUSES.get(busName)
-        `
-    ]);
-    // TODO : unit tests
-    const messageBuses = {
-        codeGenerator: () => Sequence$1([
-            ConstVar$1('Map<string, Array<(m: Message) => void>>', 'MSG_BUSES', 'new Map()'),
-            Func$1('msgBusPublish', [Var$1('string', 'busName'), Var$1('Message', 'message')], 'void') `
-            ${Var$1('Int', 'i', '0')}
-            ${ConstVar$1('Array<(m: Message) => void>', 'callbacks', 'MSG_BUSES.has(busName) ? MSG_BUSES.get(busName): []')}
-            for (i = 0; i < callbacks.length; i++) {
-                callbacks[i](message)
-            }
-        `,
-            Func$1('msgBusSubscribe', [Var$1('string', 'busName'), Var$1('(m: Message) => void', 'callback')], 'void') `
-            if (!MSG_BUSES.has(busName)) {
-                MSG_BUSES.set(busName, [])
-            }
-            MSG_BUSES.get(busName).push(callback)
-        `,
-            Func$1('msgBusUnsubscribe', [Var$1('string', 'busName'), Var$1('(m: Message) => void', 'callback')], 'void') `
-            if (!MSG_BUSES.has(busName)) {
-                return
-            }
-            ${ConstVar$1('Array<(m: Message) => void>', 'callbacks', 'MSG_BUSES.get(busName)')}
-            ${ConstVar$1('Int', 'found', 'callbacks.indexOf(callback) !== -1')}
-            if (found !== -1) {
-                callbacks.splice(found, 1)
-            }
-        `
-        ]),
-        dependencies: [msg$1],
-    };
-
     /*
      * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.
      *
@@ -14294,13 +14666,13 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         ]
     };
     // ------------------------------------------------------------------- //
-    const builders$b = {
+    const builders$a = {
         'throw~': builderThrow,
         'catch~': builderCatch,
         'send~': builderSend$1,
         'receive~': builderReceive$1,
     };
-    const nodeImplementations$b = {
+    const nodeImplementations$a = {
         'throw~': nodeImplementationThrow,
         'catch~': nodeImplementationCatch,
         'send~': nodeImplementationSend$1,
@@ -14667,222 +15039,6 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
             `
             ])
         ],
-    };
-
-    const EMPTY_BUS_NAME = 'empty';
-    const build = () => ({
-        inlets: {
-            '0': { type: 'message', id: '0' },
-        },
-        outlets: {
-            '0': { type: 'message', id: '0' },
-        },
-        // This is always true, because the object can receive 
-        // messages through message bus
-        isPushingMessages: true
-    });
-    // TODO : move to global code
-    const controlsCoreVariableNames = generateVariableNamesNodeType('control', [
-        'setReceiveBusName',
-        'setSendReceiveFromMessage',
-        'defaultMessageHandler',
-    ]);
-    const controlsCore = () => Sequence$1([
-        Class$1(controlsCoreVariableNames.stateClass, [
-            Var$1('Float', 'minValue'),
-            Var$1('Float', 'maxValue'),
-            Var$1('Float', 'valueFloat'),
-            Var$1('Message', 'value'),
-            Var$1('string', 'receiveBusName'),
-            Var$1('string', 'sendBusName'),
-            Var$1('(m: Message) => void', 'messageReceiver'),
-            Var$1('(m: Message) => void', 'messageSender'),
-        ]),
-        Func$1(controlsCoreVariableNames.setReceiveBusName, [
-            Var$1(controlsCoreVariableNames.stateClass, 'state'),
-            Var$1('string', 'busName'),
-        ], 'void') `
-        if (state.receiveBusName !== "${EMPTY_BUS_NAME}") {
-            msgBusUnsubscribe(state.receiveBusName, state.messageReceiver)
-        }
-        state.receiveBusName = busName
-        if (state.receiveBusName !== "${EMPTY_BUS_NAME}") {
-            msgBusSubscribe(state.receiveBusName, state.messageReceiver)
-        }
-    `,
-        Func$1(controlsCoreVariableNames.setSendReceiveFromMessage, [
-            Var$1(controlsCoreVariableNames.stateClass, 'state'),
-            Var$1('Message', 'm'),
-        ], 'boolean') `
-        if (
-            msg_isMatching(m, [MSG_STRING_TOKEN, MSG_STRING_TOKEN])
-            && msg_readStringToken(m, 0) === 'receive'
-        ) {
-            ${controlsCoreVariableNames.setReceiveBusName}(state, msg_readStringToken(m, 1))
-            return true
-
-        } else if (
-            msg_isMatching(m, [MSG_STRING_TOKEN, MSG_STRING_TOKEN])
-            && msg_readStringToken(m, 0) === 'send'
-        ) {
-            state.sendBusName = msg_readStringToken(m, 1)
-            return true
-        }
-        return false
-    `,
-        Func$1(controlsCoreVariableNames.defaultMessageHandler, [Var$1('Message', 'm')], 'void') ``,
-    ]);
-
-    /*
-     * Copyright (c) 2022-2023 Sébastien Piquemal <sebpiq@protonmail.com>, Chris McCormick.
-     *
-     * This file is part of WebPd
-     * (see https://github.com/sebpiq/WebPd).
-     *
-     * This program is free software: you can redistribute it and/or modify
-     * it under the terms of the GNU Lesser General Public License as published by
-     * the Free Software Foundation, either version 3 of the License, or
-     * (at your option) any later version.
-     *
-     * This program is distributed in the hope that it will be useful,
-     * but WITHOUT ANY WARRANTY; without even the implied warranty of
-     * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-     * GNU Lesser General Public License for more details.
-     *
-     * You should have received a copy of the GNU Lesser General Public License
-     * along with this program. If not, see <http://www.gnu.org/licenses/>.
-     */
-    // ------------------------------- node builder ------------------------------ //
-    const builderWithInit = {
-        translateArgs: ({ args: [minValue, maxValue, init, initValue, receive, send], }) => ({
-            minValue: assertNumber(minValue),
-            maxValue: assertNumber(maxValue),
-            sendBusName: assertOptionalString(send) || EMPTY_BUS_NAME,
-            receiveBusName: assertOptionalString(receive) || EMPTY_BUS_NAME,
-            initValue: init === 1 ? assertNumber(initValue) : 0,
-            outputOnLoad: !!init,
-        }),
-        build,
-    };
-    const builderWithoutMin = {
-        translateArgs: ({ args: [maxValue, init, initValue, receive, send], }) => ({
-            minValue: 0,
-            maxValue: assertNumber(maxValue),
-            sendBusName: assertOptionalString(send) || EMPTY_BUS_NAME,
-            receiveBusName: assertOptionalString(receive) || EMPTY_BUS_NAME,
-            initValue: init === 1 ? assertNumber(initValue) : 0,
-            outputOnLoad: !!init,
-        }),
-        build,
-    };
-    // ------------------------------- node implementation ------------------------------ //
-    const makeNodeImplementation$7 = ({ prepareStoreValue, prepareStoreValueBang, name }) => {
-        const variableNames = generateVariableNamesNodeType(name, ['receiveMessage']);
-        return {
-            initialization: ({ state, snds, node: { args }, }) => 
-            // There is a circular dependency problem between the state and snds.$0 so we can actually
-            // only use snds.$0 inside the callback of `commons_waitEngineConfigure`.
-            ast$1 `
-                ${ConstVar$1(controlsCoreVariableNames.stateClass, state, ast$1 `{
-                    minValue: ${args.minValue},
-                    maxValue: ${args.maxValue},
-                    valueFloat: ${args.initValue},
-                    value: msg_create([]),
-                    receiveBusName: "${args.receiveBusName}",
-                    sendBusName: "${args.sendBusName}",
-                    messageReceiver: ${controlsCoreVariableNames.defaultMessageHandler},
-                    messageSender: ${controlsCoreVariableNames.defaultMessageHandler},
-                }`)}
-    
-                commons_waitEngineConfigure(() => {
-                    ${state}.messageReceiver = ${AnonFunc$1([Var$1('Message', 'm')]) `
-                        ${variableNames.receiveMessage}(${state}, m)
-                    `}
-                    ${state}.messageSender = ${snds.$0}
-                    ${controlsCoreVariableNames.setReceiveBusName}(${state}, "${args.receiveBusName}")
-                })
-    
-                ${args.outputOnLoad ?
-            `commons_waitFrame(0, () => ${snds.$0}(msg_floats([${state}.valueFloat])))` : null}
-            `,
-            messageReceivers: ({ state, }) => ({
-                '0': AnonFunc$1([Var$1('Message', 'm')]) `
-                ${variableNames.receiveMessage}(${state}, m)
-                return
-            `
-            }),
-            dependencies: [
-                bangUtils,
-                messageBuses,
-                commonsWaitEngineConfigure,
-                commonsWaitFrame,
-                controlsCore,
-                () => Sequence$1([
-                    Func$1(variableNames.receiveMessage, [
-                        Var$1(controlsCoreVariableNames.stateClass, 'state'),
-                        Var$1('Message', 'm'),
-                    ], 'void') `
-                    if (msg_isMatching(m, [MSG_FLOAT_TOKEN])) {
-                        ${prepareStoreValue ?
-                    `state.valueFloat = ${prepareStoreValue(`msg_readFloatToken(m, 0)`)}`
-                    : `state.valueFloat = msg_readFloatToken(m, 0)`}
-                        ${ConstVar$1('Message', 'outMessage', `msg_floats([state.valueFloat])`)}
-                        state.messageSender(outMessage)
-                        if (state.sendBusName !== "${EMPTY_BUS_NAME}") {
-                            msgBusPublish(state.sendBusName, outMessage)
-                        }
-                        return
-        
-                    } else if (msg_isBang(m)) {
-                        ${prepareStoreValueBang ?
-                    `state.valueFloat = ${prepareStoreValueBang(`state.valueFloat`)}`
-                    : null}
-                        ${ConstVar$1('Message', 'outMessage', `msg_floats([state.valueFloat])`)}
-                        state.messageSender(outMessage)
-                        if (state.sendBusName !== "${EMPTY_BUS_NAME}") {
-                            msgBusPublish(state.sendBusName, outMessage)
-                        }
-                        return
-        
-                    } else if (
-                        msg_isMatching(m, [MSG_STRING_TOKEN, MSG_FLOAT_TOKEN]) 
-                        && msg_readStringToken(m, 0) === 'set'
-                    ) {
-                        ${prepareStoreValue ?
-                    `state.valueFloat = ${prepareStoreValue(`msg_readFloatToken(m, 1)`)}`
-                    : `state.valueFloat = msg_readFloatToken(m, 1)`}
-                        return
-                    
-                    } else if (${controlsCoreVariableNames.setSendReceiveFromMessage}(state, m) === true) {
-                        return
-                    }
-                `
-                ]),
-            ],
-        };
-    };
-    // ------------------------------------------------------------------- //
-    const nodeImplementations$a = {
-        'tgl': makeNodeImplementation$7({
-            name: 'tgl',
-            prepareStoreValueBang: (valueCode) => `${valueCode} === 0 ? state.maxValue: 0`
-        }),
-        'nbx': makeNodeImplementation$7({
-            name: 'nbx',
-            prepareStoreValue: (valueCode) => `Math.min(Math.max(${valueCode},state.minValue),state.maxValue)`
-        }),
-        'hsl': makeNodeImplementation$7({ name: 'sl' }),
-        'hradio': makeNodeImplementation$7({ name: 'radio' }),
-    };
-    nodeImplementations$a['vsl'] = nodeImplementations$a['hsl'];
-    nodeImplementations$a['vradio'] = nodeImplementations$a['hradio'];
-    const builders$a = {
-        'tgl': builderWithoutMin,
-        'nbx': builderWithInit,
-        'hsl': builderWithInit,
-        'vsl': builderWithInit,
-        'hradio': builderWithoutMin,
-        'vradio': builderWithoutMin,
     };
 
     /*
@@ -18828,18 +18984,20 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         ...builders$4,
         ...builders$3,
         ...builders$5,
-        ...builders$b,
+        ...builders$a,
         ...builders$2,
+        ...builders$2,
+        ...builders$b,
         'noise~': builder$n,
-        'snapshot~': builder$G,
-        'sig~': builder$O,
-        'samphold~': builder$H,
-        'clip~': builder$I,
-        'vline~': builder$F,
-        'line~': builder$E,
-        'dac~': builder$M,
-        'adc~': builder$L,
-        'samplerate~': builder$K,
+        'snapshot~': builder$H,
+        'sig~': builder$P,
+        'samphold~': builder$I,
+        'clip~': builder$J,
+        'vline~': builder$G,
+        'line~': builder$F,
+        'dac~': builder$N,
+        'adc~': builder$M,
+        'samplerate~': builder$L,
         'tabplay~': builder$z,
         'readsf~': builder$y,
         'writesf~': builder$x,
@@ -18851,7 +19009,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         'delwrite~': builder$l,
         's~': { aliasTo: 'send~' },
         'r~': { aliasTo: 'receive~' },
-        ...builders$a,
+        ...builders$e,
         ...builders$9,
         ...builders,
         ...builders$7,
@@ -18885,14 +19043,14 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         timer: builder$u,
         delay: builder$t,
         del: { aliasTo: 'delay' },
-        line: builder$D,
+        line: builder$E,
         soundfiler: builder$c,
-        tabread: builder$B,
-        tabwrite: builder$A,
+        tabread: builder$C,
+        tabwrite: builder$B,
         // The following are internal nodes used by the compiler
         // to help reproduce Pd's behavior
-        '_mixer~': builder$P,
-        '_routemsg': builder$N,
+        '_mixer~': builder$Q,
+        '_routemsg': builder$O,
         // The following don't need implementations as they will never
         // show up in the graph traversal.
         graph: { isNoop: true },
@@ -18910,18 +19068,19 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         ...nodeImplementations$4,
         ...nodeImplementations$3,
         ...nodeImplementations$5,
-        ...nodeImplementations$b,
+        ...nodeImplementations$a,
         ...nodeImplementations$2,
+        ...nodeImplementations$b,
         'noise~': nodeImplementation$k,
-        'snapshot~': nodeImplementation$z,
-        'sig~': nodeImplementation$G,
-        'samphold~': nodeImplementation$A,
-        'clip~': nodeImplementation$B,
-        'vline~': nodeImplementation$y,
-        'line~': nodeImplementation$x,
-        'dac~': nodeImplementation$E,
-        'adc~': nodeImplementation$D,
-        'samplerate~': nodeImplementation$C,
+        'snapshot~': nodeImplementation$A,
+        'sig~': nodeImplementation$H,
+        'samphold~': nodeImplementation$B,
+        'clip~': nodeImplementation$C,
+        'vline~': nodeImplementation$z,
+        'line~': nodeImplementation$y,
+        'dac~': nodeImplementation$F,
+        'adc~': nodeImplementation$E,
+        'samplerate~': nodeImplementation$D,
         'tabplay~': nodeImplementation$t,
         'readsf~': nodeImplementation$s,
         'writesf~': nodeImplementation$r,
@@ -18930,7 +19089,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         'hip~': nodeImplementation$i,
         'lop~': nodeImplementation$h,
         'vcf~': nodeImplementation$g,
-        ...nodeImplementations$a,
+        ...nodeImplementations$e,
         ...nodeImplementations$9,
         ...nodeImplementations,
         ...nodeImplementations$8,
@@ -18956,13 +19115,13 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         metro: nodeImplementation$p,
         timer: nodeImplementation$o,
         delay: nodeImplementation$n,
-        line: nodeImplementation$w,
-        tabread: nodeImplementation$v,
-        tabwrite: nodeImplementation$u,
+        line: nodeImplementation$x,
+        tabread: nodeImplementation$w,
+        tabwrite: nodeImplementation$v,
         soundfiler: nodeImplementation$c,
         // Internal nodes
-        '_mixer~': nodeImplementation$H,
-        '_routemsg': nodeImplementation$F,
+        '_mixer~': nodeImplementation$I,
+        '_routemsg': nodeImplementation$G,
     };
 
     /*
@@ -18992,8 +19151,8 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      *
      * @see performBuildStep
      */
-    const buildRunnable = async (pdFile, format = 'compiledJs', settings) => {
-        if (!['wasm', 'compiledJs'].includes(format)) {
+    const buildRunnable = async (pdFile, format = 'javascript', settings) => {
+        if (!['wasm', 'javascript'].includes(format)) {
             throw new Error(`Invalid out format ${format}`);
         }
         const artefacts = { pd: pdFile };
@@ -19005,7 +19164,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         }
         return artefacts[format];
     };
-    const createDefaultSettings$2 = () => ({
+    const defaultSettingsForBuild$1 = () => ({
         audioSettings: {
             channelCount: {
                 in: 2,
@@ -19049,15 +19208,15 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
                     ...artefacts,
                     dspGraph: JSON.parse(stringifyArrayBuffer(artefactBuffer)),
                 };
-            case 'compiledJs':
+            case 'javascript':
                 return {
                     ...artefacts,
-                    compiledJs: stringifyArrayBuffer(artefactBuffer),
+                    javascript: stringifyArrayBuffer(artefactBuffer),
                 };
-            case 'compiledAsc':
+            case 'assemblyscript':
                 return {
                     ...artefacts,
-                    compiledAsc: stringifyArrayBuffer(artefactBuffer),
+                    assemblyscript: stringifyArrayBuffer(artefactBuffer),
                 };
             case 'wasm':
                 return { ...artefacts, wasm: artefactBuffer };
@@ -19158,25 +19317,25 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
                         warnings,
                     };
                 }
-            case 'compiledJs':
-            case 'compiledAsc':
-                const compileCodeResult = index$3(artefacts.dspGraph.graph, nodeImplementations, target === 'compiledJs' ? 'javascript' : 'assemblyscript', {
+            case 'javascript':
+            case 'assemblyscript':
+                const compileCodeResult = index$3(artefacts.dspGraph.graph, nodeImplementations, target, {
                     audio: audioSettings,
                     io: artefacts.dspGraph.io,
                     arrays: artefacts.dspGraph.arrays,
                 });
                 {
-                    if (target === 'compiledJs') {
-                        artefacts.compiledJs = compileCodeResult.code;
+                    if (target === 'javascript') {
+                        artefacts.javascript = compileCodeResult.code;
                     }
                     else {
-                        artefacts.compiledAsc = compileCodeResult.code;
+                        artefacts.assemblyscript = compileCodeResult.code;
                     }
                     return { status: 0, warnings: [] };
                 }
             case 'wasm':
                 try {
-                    artefacts.wasm = await compileAsc(getArtefact(artefacts, 'compiledAsc'), audioSettings.bitDepth);
+                    artefacts.wasm = await compileAsc(getArtefact(artefacts, 'assemblyscript'), audioSettings.bitDepth);
                 }
                 catch (err) {
                     return {
@@ -19189,8 +19348,8 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
             case 'wav':
                 artefacts.wav = await renderWav(renderAudioSettings.previewDurationSeconds, artefacts, { ...audioSettings, ...renderAudioSettings });
                 return { status: 0, warnings: [] };
-            case 'appTemplate':
-                artefacts.appTemplate = appGenerator('bare-bones', artefacts);
+            case 'app':
+                artefacts.app = appGenerator('bare-bones', artefacts);
                 return { status: 0, warnings: [] };
             default:
                 throw new Error(`invalid build step ${target}`);
@@ -20541,8 +20700,8 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
      * You should have received a copy of the GNU Lesser General Public License
      * along with this program. If not, see <http://www.gnu.org/licenses/>.
      */
-    const createDefaultSettings$1 = (patchUrl) => ({
-        ...createDefaultSettings$2(),
+    const defaultSettingsForBuild = (patchUrl) => ({
+        ...defaultSettingsForBuild$1(),
         abstractionLoader: makeUrlAbstractionLoader(patchUrl),
     });
     /**
@@ -20979,7 +21138,7 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
         }
     };
 
-    const createDefaultSettings = (patchUrl) => {
+    const defaultSettingsForRun = (patchUrl) => {
         const rootUrl = urlDirName(patchUrl);
         return {
             messageHandler: (node, message) => index$1(node, message, { rootUrl }),
@@ -21016,8 +21175,8 @@ ${declaration.members.map(varDeclaration => `${varDeclaration.name}: ${varDeclar
 
     var index = /*#__PURE__*/Object.freeze({
         __proto__: null,
-        createDefaultBuildSettings: createDefaultSettings$1,
-        createDefaultRunSettings: createDefaultSettings,
+        defaultSettingsForBuild: defaultSettingsForBuild,
+        defaultSettingsForRun: defaultSettingsForRun,
         initialize: initialize,
         makeUrlAbstractionLoader: makeUrlAbstractionLoader,
         readMetadata: readMetadata,
